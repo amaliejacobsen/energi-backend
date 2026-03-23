@@ -51,8 +51,7 @@ def refresh():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
-```
 
 **`Procfile`** (til Railway):
-```
+
 web: gunicorn app:app --bind 0.0.0.0:$PORT
