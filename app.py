@@ -2,6 +2,7 @@ from flask import Flask, jsonify
 from flask_cors import CORS
 from supabase import create_client
 import os
+import threading
 
 app = Flask(__name__)
 CORS(app)
@@ -10,6 +11,10 @@ supabase = create_client(
     os.environ.get("SUPABASE_URL"),
     os.environ.get("SUPABASE_KEY")
 )
+
+@app.route("/")
+def index():
+    return jsonify({"status": "ok"})
 
 @app.route("/api/dk-prices/<area>")
 def dk_prices(area):
@@ -42,16 +47,13 @@ def capacity(country):
         .eq("country", country).order("year").execute()
     return jsonify(r.data)
 
-@app.route("/api/refresh", methods=["POST"])
+@app.route("/api/refresh", methods=["GET", "POST"])
 def refresh():
-    from collector import collect_all
-    import threading
-    threading.Thread(target=collect_all).start()
+    def run():
+        from collector import collect_all
+        collect_all()
+    threading.Thread(target=run).start()
     return jsonify({"status": "started"})
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
-
-**`Procfile`** (til Railway):
-
-web: gunicorn app:app --bind 0.0.0.0:$PORT
