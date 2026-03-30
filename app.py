@@ -55,5 +55,11 @@ def refresh():
     threading.Thread(target=run).start()
     return jsonify({"status": "started"})
 
+@app.route("/api/consumption/<zone>")
+def consumption(zone):
+    r = supabase.table("consumption").select("*")\
+        .eq("zone", zone).order("year").order("month").execute()
+    return jsonify(r.data)
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
