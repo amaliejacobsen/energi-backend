@@ -11,19 +11,18 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 supabase     = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-ENTSOE_TOKEN = os.environ.get("ENTSOE_TOKEN", "138899c3-59b3-48ef-9dfd-03406794210d")
-ENTSOE_URL   = "https://web-api.tp.entsoe.eu/api"
-AGSI_KEY     = os.environ.get("AGSI_KEY", "12a5ed2eb1b9d3f2091abd2213758ec2")
-AGSI_URL     = "https://agsi.gie.eu/api"
+ENTSOE_TOKEN    = os.environ.get("ENTSOE_TOKEN", "138899c3-59b3-48ef-9dfd-03406794210d")
+ENTSOE_URL      = "https://web-api.tp.entsoe.eu/api"
+AGSI_KEY        = os.environ.get("AGSI_KEY", "12a5ed2eb1b9d3f2091abd2213758ec2")
+AGSI_URL        = "https://agsi.gie.eu/api"
 
-end          = datetime.today().strftime("%Y-%m-%d")
-current_year = datetime.today().year
-current_month = datetime.today().month
+end             = datetime.today().strftime("%Y-%m-%d")
+current_year    = datetime.today().year
+current_month   = datetime.today().month
 last_full_month = current_month - 1
-fetch_years  = list(range(2020, current_year + 1))
-areas        = ["DK1", "DK2"]
+fetch_years     = list(range(2020, current_year + 1))
+areas           = ["DK1", "DK2"]
 
-# ---- Genbrugte hjælpefunktioner fra dit eksisterende script ----
 def weighted_avg(price_dict, prod_dict):
     sumproduct = 0
     total_prod = 0
@@ -55,7 +54,6 @@ def monthly_weighted(price_dict, prod_dict):
         for month in monthly_prod
     }
 
-# ---- DK priser og produktion ----
 def collect_dk_data():
     print("Henter DK data...")
     hourly_prices = {area: {} for area in areas}
@@ -104,7 +102,6 @@ def collect_dk_data():
                 rec.get("OnshoreWindGe50kW_MWh", 0)
             )
 
-    # Gem priser og capture rates
     for area in areas:
         avg_prices   = monthly_avg_prices(hourly_prices[area])
         avg_solar    = monthly_weighted(hourly_prices[area], solar_prod[area])
@@ -130,7 +127,6 @@ def collect_dk_data():
             })
         supabase.table("dk_prices").upsert(rows, on_conflict="area,month").execute()
 
-    # Gem produktion
     for area in areas:
         for source_name, prod_dict in [
             ("solar", solar_prod[area]),
@@ -154,7 +150,6 @@ def collect_dk_data():
 
     print("DK data gemt.")
 
-# ---- Hydro ----
 HYDRO_ZONES = {
     "Norge":   {"NO1": "10YNO-1--------2", "NO2": "10YNO-2--------T",
                 "NO3": "10YNO-3--------J", "NO4": "10YNO-4--------9",
@@ -229,7 +224,6 @@ def collect_hydro_data():
     supabase.table("hydro_production").upsert(rows, on_conflict="country,zone,year,month").execute()
     print("Hydro data gemt.")
 
-# ---- Gas storage ----
 GAS_COUNTRIES = {
     "EU":       {"param": "continent", "code": "EU"},
     "Tyskland": {"param": "country",   "code": "de"},
@@ -282,7 +276,6 @@ def collect_gas_data():
     supabase.table("gas_storage").upsert(rows, on_conflict="area,year,month").execute()
     print("Gas data gemt.")
 
-# ---- Installed capacity ----
 CAPACITY_COUNTRIES = {
     "Danmark":  "10Y1001A1001A65H",
     "Norge":    "10YNO-0--------C",
@@ -359,17 +352,6 @@ def collect_capacity_data():
     supabase.table("installed_capacity").upsert(rows, on_conflict="country,psr_type,year").execute()
     print("Installed capacity gemt.")
 
-def collect_all():
-    print(f"\n{'='*40}\nDataindsamling startet: {datetime.now()}\n{'='*40}")
-    collect_dk_data()
-    collect_gas_data()
-    collect_hydro_data()
-    collect_capacity_data()
-    print(f"\nAlt data gemt: {datetime.now()}")
-
-if __name__ == "__main__":
-
-# ---- Forbrug ----
 CONSUMPTION_ZONES = {
     "DK1":      "10YDK-1--------W",
     "DK2":      "10YDK-2--------M",
@@ -456,4 +438,15 @@ def collect_consumption_data():
             rows, on_conflict="zone,year,month"
         ).execute()
     print("Forbrug gemt.")
+
+def collect_all():
+    print(f"\n{'='*40}\nDataindsamling startet: {datetime.now()}\n{'='*40}")
+    collect_dk_data()
+    collect_gas_data()
+    collect_hydro_data()
+    collect_capacity_data()
+    collect_consumption_data()
+    print(f"\nAlt data gemt: {datetime.now()}")
+
+if __name__ == "__main__":
     collect_all()
