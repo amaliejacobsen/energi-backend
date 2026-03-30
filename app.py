@@ -61,5 +61,11 @@ def consumption(zone):
         .eq("zone", zone).order("year").order("month").execute()
     return jsonify(r.data)
 
+@app.route("/api/consumption-hourly/<zone>")
+def consumption_hourly(zone):
+    r = supabase.table("consumption_hourly").select("*")\
+        .eq("zone", zone).order("year").order("hour").execute()
+    return jsonify(r.data)
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
