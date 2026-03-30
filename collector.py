@@ -369,7 +369,7 @@ def collect_all():
 
 if __name__ == "__main__":
 
-    # ---- Forbrug ----
+# ---- Forbrug ----
 CONSUMPTION_ZONES = {
     "DK1":      "10YDK-1--------W",
     "DK2":      "10YDK-2--------M",
