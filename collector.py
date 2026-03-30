@@ -374,6 +374,7 @@ CONSUMPTION_ZONES = {
 
 def fetch_consumption_monthly(eic_code, year, token):
     monthly = defaultdict(list)
+    hourly  = defaultdict(list)
     params = {
         "documentType":          "A65",
         "processType":           "A16",
@@ -389,17 +390,17 @@ def fetch_consumption_monthly(eic_code, year, token):
         elif r.status_code in (503, 429):
             time.sleep(15 * (attempt + 1))
         else:
-            return {}
+            return {}, {}
     else:
-        return {}
+        return {}, {}
 
     if "No matching data found" in r.text:
-        return {}
+        return {}, {}
 
     try:
         root = ET.fromstring(r.text)
     except ET.ParseError:
-        return {}
+        return {}, {}
 
     ns_uri = root.tag.split("}")[0][1:] if root.tag.startswith("{") else ""
     prefix = f"{{{ns_uri}}}" if ns_uri else ""
@@ -429,27 +430,40 @@ def fetch_consumption_monthly(eic_code, year, token):
                 else:
                     continue
                 monthly[dt.month].append(qty)
+                hourly[dt.hour].append(qty)
 
-    return {m: sum(v) / len(v) for m, v in monthly.items() if v}
+    monthly_avg = {m: sum(v) / len(v) for m, v in monthly.items() if v}
+    hourly_avg  = {h: sum(v) / len(v) for h, v in hourly.items() if v}
+    return monthly_avg, hourly_avg
 
 def collect_consumption_data():
     print("Henter forbrug...")
-    rows = []
+    monthly_rows = []
+    hourly_rows  = []
     for zone, eic in CONSUMPTION_ZONES.items():
         for year in fetch_years:
             print(f"  {zone} {year}...")
-            monthly = fetch_consumption_monthly(eic, year, ENTSOE_TOKEN)
+            monthly, hourly = fetch_consumption_monthly(eic, year, ENTSOE_TOKEN)
             for month, val in monthly.items():
                 if year == current_year and month > last_full_month:
                     continue
-                rows.append({
+                monthly_rows.append({
                     "zone": zone, "year": year,
                     "month": month, "value_mwh": val
                 })
+            for hour, val in hourly.items():
+                hourly_rows.append({
+                    "zone": zone, "year": year,
+                    "hour": hour, "value_mwh": val
+                })
             time.sleep(1)
-    if rows:
+    if monthly_rows:
         supabase.table("consumption").upsert(
-            rows, on_conflict="zone,year,month"
+            monthly_rows, on_conflict="zone,year,month"
+        ).execute()
+    if hourly_rows:
+        supabase.table("consumption_hourly").upsert(
+            hourly_rows, on_conflict="zone,year,hour"
         ).execute()
     print("Forbrug gemt.")
 
