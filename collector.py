@@ -307,7 +307,7 @@ def collect_capacity_data():
     print("Henter installed capacity...")
     rows = []
     for country, eic in CAPACITY_COUNTRIES.items():
-        for year in range(2023, current_year + 1):
+        for year in range(2020, current_year + 1):
             params = {
                 "documentType": "A68", "processType": "A33",
                 "in_Domain": eic,
