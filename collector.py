@@ -368,4 +368,92 @@ def collect_all():
     print(f"\nAlt data gemt: {datetime.now()}")
 
 if __name__ == "__main__":
+
+    # ---- Forbrug ----
+CONSUMPTION_ZONES = {
+    "DK1":      "10YDK-1--------W",
+    "DK2":      "10YDK-2--------M",
+    "Tyskland": "10Y1001A1001A83F",
+}
+
+def fetch_consumption_monthly(eic_code, year, token):
+    monthly = defaultdict(list)
+    params = {
+        "documentType":          "A65",
+        "processType":           "A16",
+        "outBiddingZone_Domain": eic_code,
+        "periodStart":           f"{year}01010000",
+        "periodEnd":             f"{year}12312300",
+        "securityToken":         token,
+    }
+    for attempt in range(3):
+        r = requests.get(ENTSOE_URL, params=params, timeout=60)
+        if r.status_code == 200:
+            break
+        elif r.status_code in (503, 429):
+            time.sleep(15 * (attempt + 1))
+        else:
+            return {}
+    else:
+        return {}
+
+    if "No matching data found" in r.text:
+        return {}
+
+    try:
+        root = ET.fromstring(r.text)
+    except ET.ParseError:
+        return {}
+
+    ns_uri = root.tag.split("}")[0][1:] if root.tag.startswith("{") else ""
+    prefix = f"{{{ns_uri}}}" if ns_uri else ""
+
+    for ts in root.findall(f".//{prefix}TimeSeries"):
+        for period in ts.findall(f"{prefix}Period"):
+            start_el = period.find(f"{prefix}timeInterval/{prefix}start")
+            res_el   = period.find(f"{prefix}resolution")
+            if start_el is None or res_el is None:
+                continue
+            start_dt   = datetime.strptime(start_el.text, "%Y-%m-%dT%H:%MZ")
+            resolution = res_el.text
+            for point in period.findall(f"{prefix}Point"):
+                pos_el = point.find(f"{prefix}position")
+                qty_el = point.find(f"{prefix}quantity")
+                if pos_el is None or qty_el is None:
+                    continue
+                try:
+                    pos = int(pos_el.text)
+                    qty = float(qty_el.text)
+                except (ValueError, TypeError):
+                    continue
+                if resolution == "PT60M":
+                    dt = start_dt + __import__('datetime').timedelta(hours=pos - 1)
+                elif resolution == "PT15M":
+                    dt = start_dt + __import__('datetime').timedelta(minutes=(pos - 1) * 15)
+                else:
+                    continue
+                monthly[dt.month].append(qty)
+
+    return {m: sum(v) / len(v) for m, v in monthly.items() if v}
+
+def collect_consumption_data():
+    print("Henter forbrug...")
+    rows = []
+    for zone, eic in CONSUMPTION_ZONES.items():
+        for year in fetch_years:
+            print(f"  {zone} {year}...")
+            monthly = fetch_consumption_monthly(eic, year, ENTSOE_TOKEN)
+            for month, val in monthly.items():
+                if year == current_year and month > last_full_month:
+                    continue
+                rows.append({
+                    "zone": zone, "year": year,
+                    "month": month, "value_mwh": val
+                })
+            time.sleep(1)
+    if rows:
+        supabase.table("consumption").upsert(
+            rows, on_conflict="zone,year,month"
+        ).execute()
+    print("Forbrug gemt.")
     collect_all()
