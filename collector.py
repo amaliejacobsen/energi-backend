@@ -286,14 +286,28 @@ CAPACITY_COUNTRIES = {
 }
 
 PSR_NAMES = {
-    "B01": "Biomasse",       "B02": "Brun kul",
-    "B03": "Gas (fossil)",   "B04": "Gas turbine",
-    "B05": "Kul (fossil)",   "B06": "Olie",
-    "B09": "Vandkraft (pumped)", "B10": "Vandkraft (run-of-river)",
-    "B11": "Vandkraft (reservoir)", "B12": "Havvind",
-    "B13": "Landvind",       "B14": "Sol",
-    "B16": "Atomkraft",      "B17": "Andet VE",
-    "B18": "Affald",         "B19": "Andet ikke-VE",
+PSR_NAMES = {
+    "B01": "Biomass",
+    "B02": "Fossil Brown coal/Lignite",
+    "B03": "Fossil Coal-derived gas",
+    "B04": "Fossil Gas",
+    "B05": "Fossil Hard coal",
+    "B06": "Fossil Oil",
+    "B07": "Fossil Oil shale",
+    "B08": "Fossil Peat",
+    "B09": "Hydro Pumped Storage",
+    "B10": "Hydro Run-of-river and pondage",
+    "B11": "Hydro Water Reservoir",
+    "B12": "Wind Offshore",
+    "B13": "Wind Onshore",
+    "B14": "Solar",
+    "B15": "Geothermal",
+    "B16": "Nuclear",
+    "B17": "Other renewable",
+    "B18": "Waste",
+    "B19": "Other",
+    "B20": "Marine",
+    "B21": "Energy storage",
 }
 
 def collect_capacity_data():
