@@ -286,7 +286,6 @@ CAPACITY_COUNTRIES = {
 }
 
 PSR_NAMES = {
-PSR_NAMES = {
     "B01": "Biomass",
     "B02": "Fossil Brown coal/Lignite",
     "B03": "Fossil Coal-derived gas",
