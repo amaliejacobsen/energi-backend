@@ -1,73 +1,52 @@
-from flask import Flask, jsonify
-from flask_cors import CORS
-from supabase import create_client
-import os
-import threading
+// RETTELSE AF groupByYear
+function groupByYear(data, valueKey) {
+  if (!data || data.length === 0) return { years: [], byMonth: [] };
+  const currentYear = new Date().getFullYear();
+  const years = [...new Set(data.map(d => d.year || parseInt(String(d.month).split('-')[0])))].sort();
+  
+  const byMonth = MONTH_NAMES.map((name, i) => {
+    const row = { month: name };
+    const monthNum = i + 1;
+    
+    years.forEach(year => {
+      // Vi tjekker både om d.month er et tal (4) eller en streng ("2026-04")
+      const found = data.find(d => {
+        const dMonth = String(d.month).includes('-') ? parseInt(d.month.split('-')[1]) : d.month;
+        const dYear = d.year || parseInt(d.month.split('-')[0]);
+        return dYear === year && dMonth === monthNum;
+      });
+      row[year] = found ? found[valueKey] : null;
+    });
 
-app = Flask(__name__)
-CORS(app)
+    const historicVals = years
+      .filter(y => y < currentYear)
+      .map(y => row[y])
+      .filter(v => v !== null && v > 0);
+    
+    row["Median"] = calcMedian(historicVals);
+    return row;
+  });
+  return { years, byMonth };
+}
 
-supabase = create_client(
-    os.environ.get("SUPABASE_URL"),
-    os.environ.get("SUPABASE_KEY")
-)
+// RETTELSE AF DKPrices (for at håndtere "2026-04" formatet)
+function DKPrices({ area }) {
+  const [data, setData] = useState([]);
+  useEffect(() => {
+    fetch(`${API}/dk-prices/${area}`).then(r => r.json()).then(setData);
+  }, [area]);
 
-@app.route("/")
-def index():
-    return jsonify({"status": "ok"})
+  const chartData = data.map(d => {
+    // Hvis month er "2026-04", lav det om til "Apr"
+    const mIdx = String(d.month).includes('-') ? parseInt(d.month.split('-')[1]) - 1 : d.month - 1;
+    return { 
+      month: MONTH_NAMES[mIdx], 
+      Spotpris: d.spot_price, 
+      Solar: d.solar_weighted, 
+      Offshore: d.offshore_weighted, 
+      Onshore: d.onshore_weighted 
+    };
+  });
 
-@app.route("/api/dk-prices/<area>")
-def dk_prices(area):
-    r = supabase.table("dk_prices").select("*").eq("area", area).order("month").execute()
-    return jsonify(r.data)
-
-@app.route("/api/dk-production/<area>/<source>")
-def dk_production(area, source):
-    r = supabase.table("dk_production").select("*")\
-        .eq("area", area).eq("source", source)\
-        .order("year").order("month").execute()
-    return jsonify(r.data)
-
-@app.route("/api/hydro/<country>/<zone>")
-def hydro(country, zone):
-    r = supabase.table("hydro_production").select("*")\
-        .eq("country", country).eq("zone", zone)\
-        .order("year").order("month").execute()
-    return jsonify(r.data)
-
-@app.route("/api/gas/<area>")
-def gas(area):
-    r = supabase.table("gas_storage").select("*")\
-        .eq("area", area).order("year").order("month").execute()
-    return jsonify(r.data)
-
-@app.route("/api/capacity/<country>")
-def capacity(country):
-    r = supabase.table("installed_capacity").select("*")\
-        .eq("country", country).order("year").execute()
-    return jsonify(r.data)
-
-@app.route("/api/refresh", methods=["GET", "POST"])
-def refresh():
-    try:
-        from collector import collect_all
-        # Vi kører den direkte uden threading, så browseren venter på svar
-        collect_all()
-        return jsonify({"status": "success", "message": "Alt data er nu hentet og gemt i Supabase"})
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-@app.route("/api/consumption/<zone>")
-def consumption(zone):
-    r = supabase.table("consumption").select("*")\
-        .eq("zone", zone).order("year").order("month").execute()
-    return jsonify(r.data)
-
-@app.route("/api/consumption-hourly/<zone>")
-def consumption_hourly(zone):
-    r = supabase.table("consumption_hourly").select("*")\
-        .eq("zone", zone).order("year").order("hour").execute()
-    return jsonify(r.data)
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080)
+  // ... resten af din DKPrices kode
+}
