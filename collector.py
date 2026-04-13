@@ -135,8 +135,6 @@ def collect_dk_data():
         ]:
             monthly_by_year = defaultdict(lambda: defaultdict(float))
             for dt, prod in prod_dict.items():
-                if dt.year == current_year and dt.month > last_full_month:
-                    continue
                 monthly_by_year[dt.year][dt.month] += prod
 
             rows = []
@@ -274,8 +272,6 @@ def collect_gas_data():
             print(f"  {area_name} {year}...")
             monthly = fetch_gas_storage_monthly(area_config, year, AGSI_KEY)
             for month, val in monthly.items():
-                if year == current_year and month > last_full_month:
-                    continue
                 rows.append({
                     "area": area_name, "year": year,
                     "month": month, "full_pct": val
@@ -369,8 +365,11 @@ def collect_capacity_data():
                     "year": year, "value_mw": mw
                 })
             time.sleep(1)
-    supabase.table("installed_capacity").upsert(rows, on_conflict="country,psr_type,year").execute()
-    print("Installed capacity gemt.")
+        if rows:
+            supabase.table("installed_capacity").upsert(rows, on_conflict="country,psr_type,year").execute()
+            print(f"Capacity data gemt ({len(rows)} rækker).")
+        else:
+    print("Ingen capacity data fundet – springes over.")
 
 CONSUMPTION_ZONES = {
     "DK1":      "10YDK-1--------W",
@@ -450,8 +449,6 @@ def collect_consumption_data():
         for year in fetch_years:
             print(f"  {zone} {year}...")
             monthly, hourly = fetch_consumption_monthly(eic, year, ENTSOE_TOKEN)
-            for month, val in monthly.items():
-                if year == current_year and month > last_full_month:
                     continue
                 monthly_rows.append({
                     "zone": zone, "year": year,
