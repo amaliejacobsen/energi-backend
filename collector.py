@@ -107,14 +107,19 @@ def collect_dk_data():
 
         all_months = sorted(set(avg_prices) | set(avg_solar) | set(avg_offshore) | set(avg_onshore))
         rows = []
-        for month in all_months:
-            spot  = avg_prices.get(month, 0)
-            solar = avg_solar.get(month, 0)
-            offsh = avg_offshore.get(month, 0)
-            onsh  = avg_onshore.get(month, 0)
+        for month_key in all_months:
+            spot  = avg_prices.get(month_key, 0)
+            solar = avg_solar.get(month_key, 0)
+            offsh = avg_offshore.get(month_key, 0)
+            onsh  = avg_onshore.get(month_key, 0)
+            
             if spot == 0: continue
+            
+            # Vi sikrer os at 'month' er i formatet 'YYYY-MM' (f.eks. '2026-04')
+            # Hvis month_key allerede er en streng som '2026-04', så gemmes den direkte.
             rows.append({
-                "area": area, "month": month,
+                "area": area, 
+                "month": str(month_key), 
                 "spot_price": spot,
                 "solar_weighted": solar,
                 "offshore_weighted": offsh,
@@ -123,6 +128,7 @@ def collect_dk_data():
                 "offshore_capture_rate": (offsh / spot * 100) if spot else 0,
                 "onshore_capture_rate":  (onsh  / spot * 100) if spot else 0,
             })
+        
         supabase.table("dk_prices").upsert(rows, on_conflict="area,month").execute()
 
     print("DK data gemt.")
