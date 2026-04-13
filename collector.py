@@ -215,14 +215,21 @@ def collect_hydro_data():
                 print(f"  {zone} {year}...")
                 monthly = fetch_hydro_monthly_a75(eic, year, ENTSOE_TOKEN)
                 for month, val in monthly.items():
-                    if year == current_year and month > last_full_month:
-                        continue
+                    # Vi fjerner blokeringen af den nuværende måned her
                     rows.append({
-                        "country": country, "zone": zone,
-                        "year": year, "month": month, "value_mwh": val
+                        "country": country, 
+                        "zone": zone,
+                        "year": year, 
+                        "month": month, 
+                        "value_mwh": val
                     })
-    supabase.table("hydro_production").upsert(rows, on_conflict="country,zone,year,month").execute()
-    print("Hydro data gemt.")
+    
+    # Vi tjekker om der rent faktisk er data, før vi gemmer
+    if rows:
+        supabase.table("hydro_production").upsert(rows, on_conflict="country,zone,year,month").execute()
+        print(f"Hydro data gemt ({len(rows)} rækker).")
+    else:
+        print("Ingen hydro data fundet – springes over.")
 
 GAS_COUNTRIES = {
     "EU":       {"param": "continent", "code": "EU"},
