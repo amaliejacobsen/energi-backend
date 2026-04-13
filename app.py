@@ -49,11 +49,13 @@ def capacity(country):
 
 @app.route("/api/refresh", methods=["GET", "POST"])
 def refresh():
-    def run():
+    try:
         from collector import collect_all
+        # Vi kører den direkte uden threading, så browseren venter på svar
         collect_all()
-    threading.Thread(target=run).start()
-    return jsonify({"status": "started"})
+        return jsonify({"status": "success", "message": "Alt data er nu hentet og gemt i Supabase"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route("/api/consumption/<zone>")
 def consumption(zone):
