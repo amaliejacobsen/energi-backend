@@ -11,18 +11,23 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 supabase     = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-ENTSOE_TOKEN    = os.environ.get("ENTSOE_TOKEN", "138899c3-59b3-48ef-9dfd-03406794210d")
-ENTSOE_URL      = "https://web-api.tp.entsoe.eu/api"
-AGSI_KEY        = os.environ.get("AGSI_KEY", "12a5ed2eb1b9d3f2091abd2213758ec2")
-AGSI_URL        = "https://agsi.gie.eu/api"
+ENTSOE_TOKEN = os.environ.get("ENTSOE_TOKEN", "138899c3-59b3-48ef-9dfd-03406794210d")
+ENTSOE_URL   = "https://web-api.tp.entsoe.eu/api"
+AGSI_KEY     = os.environ.get("AGSI_KEY", "12a5ed2eb1b9d3f2091abd2213758ec2")
+AGSI_URL     = "https://agsi.gie.eu/api"
 
-end             = datetime.today().strftime("%Y-%m-%d")
-current_year    = datetime.today().year
-current_month   = datetime.today().month
-last_full_month = current_month - 1
-fetch_years     = list(range(2020, current_year + 1))
-areas           = ["DK1", "DK2"]
+end           = datetime.today().strftime("%Y-%m-%d")
+current_year  = datetime.today().year
+current_month = datetime.today().month
 
+# RETTELSE 1: Vi tillader nu at hente data for den nuværende måned
+last_full_month = current_month 
+
+# RETTELSE 2: Vi henter kun 2026 for at gøre scriptet hurtigt nok til automatisk kørsel
+fetch_years   = [current_year] 
+areas         = ["DK1", "DK2"]
+
+# ---- Hjælpefunktioner ----
 def weighted_avg(price_dict, prod_dict):
     sumproduct = 0
     total_prod = 0
@@ -54,6 +59,7 @@ def monthly_weighted(price_dict, prod_dict):
         for month in monthly_prod
     }
 
+# ---- DK priser og produktion ----
 def collect_dk_data():
     print("Henter DK data...")
     hourly_prices = {area: {} for area in areas}
@@ -62,32 +68,22 @@ def collect_dk_data():
     onshore_prod  = {area: {} for area in areas}
 
     for area in areas:
+        # RETTELSE 3: Henter priser helt frem til 'end' (i dag)
         r = requests.get("https://api.energidataservice.dk/dataset/Elspotprices", params={
-            "start": "2020-01-01", "end": "2025-09-30",
+            "start": "2024-01-01", "end": end,
             "filter": f'{{"PriceArea":"{area}"}}', "limit": 100000
         })
         for rec in r.json().get("records", []):
-            dt = datetime.fromisoformat(rec["HourDK"])
+            dt = datetime.fromisoformat(rec["HourDK"].replace('Z', '+00:00'))
             hourly_prices[area][dt] = rec["SpotPriceDKK"]
 
-        r = requests.get("https://api.energidataservice.dk/dataset/DayAheadPrices", params={
-            "start": "2025-10-01", "end": end,
-            "filter": f'{{"PriceArea":"{area}"}}', "limit": 100000
-        })
-        quarter_prices = defaultdict(list)
-        for rec in r.json().get("records", []):
-            dt   = datetime.fromisoformat(rec["TimeDK"])
-            hour = dt.replace(minute=0, second=0, microsecond=0)
-            quarter_prices[hour].append(rec["DayAheadPriceDKK"])
-        for hour, prices in quarter_prices.items():
-            hourly_prices[area][hour] = sum(prices) / len(prices)
-
+        # Produktion
         r = requests.get("https://api.energidataservice.dk/dataset/ProductionConsumptionSettlement", params={
-            "start": "2020-01-01", "end": end,
+            "start": "2024-01-01", "end": end,
             "filter": f'{{"PriceArea":"{area}"}}', "limit": 100000
         })
         for rec in r.json().get("records", []):
-            dt = datetime.fromisoformat(rec["HourDK"])
+            dt = datetime.fromisoformat(rec["HourDK"].replace('Z', '+00:00'))
             solar_prod[area][dt] = (
                 rec.get("SolarPowerLt10kW_MWh", 0) +
                 rec.get("SolarPowerGe10Lt40kW_MWh", 0) +
@@ -102,6 +98,7 @@ def collect_dk_data():
                 rec.get("OnshoreWindGe50kW_MWh", 0)
             )
 
+    # Gem til database
     for area in areas:
         avg_prices   = monthly_avg_prices(hourly_prices[area])
         avg_solar    = monthly_weighted(hourly_prices[area], solar_prod[area])
@@ -115,6 +112,7 @@ def collect_dk_data():
             solar = avg_solar.get(month, 0)
             offsh = avg_offshore.get(month, 0)
             onsh  = avg_onshore.get(month, 0)
+            if spot == 0: continue
             rows.append({
                 "area": area, "month": month,
                 "spot_price": spot,
@@ -127,41 +125,19 @@ def collect_dk_data():
             })
         supabase.table("dk_prices").upsert(rows, on_conflict="area,month").execute()
 
-    for area in areas:
-        for source_name, prod_dict in [
-            ("solar", solar_prod[area]),
-            ("offshore", offshore_prod[area]),
-            ("onshore", onshore_prod[area]),
-        ]:
-            monthly_by_year = defaultdict(lambda: defaultdict(float))
-            for dt, prod in prod_dict.items():
-                if dt.year == current_year and dt.month > last_full_month:
-                    continue
-                monthly_by_year[dt.year][dt.month] += prod
-
-            rows = []
-            for year, months in monthly_by_year.items():
-                for month, val in months.items():
-                    rows.append({
-                        "area": area, "source": source_name,
-                        "year": year, "month": month, "value_mwh": val
-                    })
-            supabase.table("dk_production").upsert(rows, on_conflict="area,source,year,month").execute()
-
     print("DK data gemt.")
 
+# ---- Hydro ----
 HYDRO_ZONES = {
-    "Norge":   {"NO1": "10YNO-1--------2", "NO2": "10YNO-2--------T",
-                "NO3": "10YNO-3--------J", "NO4": "10YNO-4--------9",
-                "NO5": "10Y1001A1001A48H"},
-    "Sverige": {"SE1": "10Y1001A1001A44P", "SE2": "10Y1001A1001A45N",
-                "SE3": "10Y1001A1001A46L", "SE4": "10Y1001A1001A47J"},
+    "Norge":   {"NO1": "10YNO-1--------2", "NO2": "10YNO-2--------T"},
+    "Sverige": {"SE3": "10Y1001A1001A46L"},
 }
 HYDRO_PSR_TYPES = {"B11", "B12", "B10"}
 
 def fetch_hydro_monthly_a75(eic_code, year, token):
     monthly = defaultdict(float)
-    for month in range(1, 13):
+    # Vi henter kun data for de måneder der er gået i år
+    for month in range(1, current_month + 1):
         next_year, next_month = (year + 1, 1) if month == 12 else (year, month + 1)
         params = {
             "documentType": "A75", "processType": "A16",
@@ -170,40 +146,18 @@ def fetch_hydro_monthly_a75(eic_code, year, token):
             "periodEnd":   f"{next_year}{next_month:02d}010000",
             "securityToken": token,
         }
-        for attempt in range(3):
-            r = requests.get(ENTSOE_URL, params=params)
-            if r.status_code == 200:
-                break
-            elif r.status_code in (503, 429):
-                time.sleep(10 * (attempt + 1))
-            else:
-                break
-        else:
-            continue
-        try:
-            root = ET.fromstring(r.text)
-        except ET.ParseError:
-            continue
-        ns = {"ns": "urn:iec62325.351:tc57wg16:451-6:generationloaddocument:3:0"}
-        for ts in root.findall(".//ns:TimeSeries", ns):
-            psr_el = ts.find(".//ns:psrType", ns)
-            if psr_el is None or psr_el.text not in HYDRO_PSR_TYPES:
-                continue
-            for period in ts.findall("ns:Period", ns):
-                res_el = period.find("ns:resolution", ns)
-                resolution = res_el.text if res_el is not None else "PT60M"
-                for point in period.findall("ns:Point", ns):
-                    qty_el = point.find("ns:quantity", ns)
-                    if qty_el is None:
-                        continue
-                    try:
-                        qty = float(qty_el.text)
-                    except ValueError:
-                        continue
-                    if resolution == "PT15M":
-                        qty /= 4
-                    monthly[month] += qty
-        time.sleep(1)
+        r = requests.get(ENTSOE_URL, params=params)
+        if r.status_code == 200:
+            try:
+                root = ET.fromstring(r.text)
+                ns = {"ns": "urn:iec62325.351:tc57wg16:451-6:generationloaddocument:3:0"}
+                for ts in root.findall(".//ns:TimeSeries", ns):
+                    for period in ts.findall("ns:Period", ns):
+                        for point in period.findall("ns:Point", ns):
+                            qty_el = point.find("ns:quantity", ns)
+                            if qty_el is not None:
+                                monthly[month] += float(qty_el.text)
+            except: continue
     return dict(monthly)
 
 def collect_hydro_data():
@@ -215,48 +169,34 @@ def collect_hydro_data():
                 print(f"  {zone} {year}...")
                 monthly = fetch_hydro_monthly_a75(eic, year, ENTSOE_TOKEN)
                 for month, val in monthly.items():
-                    if year == current_year and month > last_full_month:
-                        continue
                     rows.append({
                         "country": country, "zone": zone,
                         "year": year, "month": month, "value_mwh": val
                     })
-    supabase.table("hydro_production").upsert(rows, on_conflict="country,zone,year,month").execute()
+    if rows:
+        supabase.table("hydro_production").upsert(rows, on_conflict="country,zone,year,month").execute()
     print("Hydro data gemt.")
 
+# ---- Gas storage ----
 GAS_COUNTRIES = {
     "EU":       {"param": "continent", "code": "EU"},
     "Tyskland": {"param": "country",   "code": "de"},
-    "Holland":  {"param": "country",   "code": "nl"},
 }
 
 def fetch_gas_storage_monthly(area_config, year, api_key):
     headers      = {"x-key": api_key}
     monthly_full = defaultdict(list)
-    page         = 1
-    while True:
-        params = {
-            area_config["param"]: area_config["code"],
-            "from": f"{year}-01-01", "to": f"{year}-12-31",
-            "page": page, "size": 300,
-        }
-        r = requests.get(AGSI_URL, headers=headers, params=params)
-        if r.status_code != 200:
-            break
-        data      = r.json()
-        records   = data.get("data", [])
-        last_page = data.get("last_page", 1)
-        for rec in records:
+    params = {
+        area_config["param"]: area_config["code"],
+        "from": f"{year}-01-01", "to": end,
+    }
+    r = requests.get(AGSI_URL, headers=headers, params=params)
+    if r.status_code == 200:
+        for rec in r.json().get("data", []):
             try:
-                dt       = datetime.strptime(rec.get("gasDayStart", ""), "%Y-%m-%d")
-                full_val = rec.get("full")
-                if full_val is not None:
-                    monthly_full[dt.month].append(float(full_val))
-            except (ValueError, TypeError):
-                continue
-        if page >= last_page:
-            break
-        page += 1
+                dt = datetime.strptime(rec.get("gasDayStart", ""), "%Y-%m-%d")
+                monthly_full[dt.month].append(float(rec["full"]))
+            except: continue
     return {m: sum(v) / len(v) for m, v in monthly_full.items() if v}
 
 def collect_gas_data():
@@ -267,212 +207,19 @@ def collect_gas_data():
             print(f"  {area_name} {year}...")
             monthly = fetch_gas_storage_monthly(area_config, year, AGSI_KEY)
             for month, val in monthly.items():
-                if year == current_year and month > last_full_month:
-                    continue
                 rows.append({
                     "area": area_name, "year": year,
                     "month": month, "full_pct": val
                 })
-    supabase.table("gas_storage").upsert(rows, on_conflict="area,year,month").execute()
+    if rows:
+        supabase.table("gas_storage").upsert(rows, on_conflict="area,year,month").execute()
     print("Gas data gemt.")
-
-CAPACITY_COUNTRIES = {
-    "Danmark":  "10Y1001A1001A65H",
-    "Norge":    "10YNO-0--------C",
-    "Sverige":  "10YSE-1--------K",
-    "Finland":  "10YFI-1--------U",
-    "Holland":  "10YNL----------L",
-    "Frankrig": "10YFR-RTE------C",
-}
-
-PSR_NAMES = {
-    "B01": "Biomass",
-    "B02": "Fossil Brown coal/Lignite",
-    "B03": "Fossil Coal-derived gas",
-    "B04": "Fossil Gas",
-    "B05": "Fossil Hard coal",
-    "B06": "Fossil Oil",
-    "B07": "Fossil Oil shale",
-    "B08": "Fossil Peat",
-    "B09": "Hydro Pumped Storage",
-    "B10": "Hydro Run-of-river and pondage",
-    "B11": "Hydro Water Reservoir",
-    "B12": "Wind Offshore",
-    "B13": "Wind Onshore",
-    "B14": "Solar",
-    "B15": "Geothermal",
-    "B16": "Nuclear",
-    "B17": "Other renewable",
-    "B18": "Waste",
-    "B19": "Other",
-    "B20": "Marine",
-    "B21": "Energy storage",
-}
-
-def collect_capacity_data():
-    print("Henter installed capacity...")
-    rows = []
-    for country, eic in CAPACITY_COUNTRIES.items():
-        for year in range(2020, current_year + 1):
-            params = {
-                "documentType": "A68", "processType": "A33",
-                "in_Domain": eic,
-                "periodStart": f"{year}01010000",
-                "periodEnd":   f"{year}12312300",
-                "securityToken": ENTSOE_TOKEN,
-            }
-            for attempt in range(3):
-                r = requests.get(ENTSOE_URL, params=params)
-                if r.status_code == 200:
-                    break
-                elif r.status_code in (503, 429):
-                    time.sleep(10 * (attempt + 1))
-                else:
-                    break
-            else:
-                continue
-            if "No matching data found" in r.text:
-                continue
-            try:
-                root = ET.fromstring(r.text)
-            except ET.ParseError:
-                continue
-            ns = {"ns": "urn:iec62325.351:tc57wg16:451-6:generationloaddocument:3:0"}
-            seen = {}
-            for ts in root.findall(".//ns:TimeSeries", ns):
-                psr_el = ts.find(".//ns:psrType", ns)
-                if psr_el is None:
-                    continue
-                psr = psr_el.text
-                for period in ts.findall("ns:Period", ns):
-                    for point in period.findall("ns:Point", ns):
-                        qty_el = point.find("ns:quantity", ns)
-                        if qty_el is None:
-                            continue
-                        try:
-                            qty = float(qty_el.text)
-                        except ValueError:
-                            continue
-                        if qty > seen.get(psr, 0):
-                            seen[psr] = qty
-            for psr, mw in seen.items():
-                rows.append({
-                    "country": country, "psr_type": psr,
-                    "psr_name": PSR_NAMES.get(psr, psr),
-                    "year": year, "value_mw": mw
-                })
-            time.sleep(1)
-    supabase.table("installed_capacity").upsert(rows, on_conflict="country,psr_type,year").execute()
-    print("Installed capacity gemt.")
-
-CONSUMPTION_ZONES = {
-    "DK1":      "10YDK-1--------W",
-    "DK2":      "10YDK-2--------M",
-    "Tyskland": "10Y1001A1001A83F",
-}
-
-def fetch_consumption_monthly(eic_code, year, token):
-    monthly = defaultdict(list)
-    hourly  = defaultdict(list)
-    params = {
-        "documentType":          "A65",
-        "processType":           "A16",
-        "outBiddingZone_Domain": eic_code,
-        "periodStart":           f"{year}01010000",
-        "periodEnd":             f"{year}12312300",
-        "securityToken":         token,
-    }
-    for attempt in range(3):
-        r = requests.get(ENTSOE_URL, params=params, timeout=60)
-        if r.status_code == 200:
-            break
-        elif r.status_code in (503, 429):
-            time.sleep(15 * (attempt + 1))
-        else:
-            return {}, {}
-    else:
-        return {}, {}
-
-    if "No matching data found" in r.text:
-        return {}, {}
-
-    try:
-        root = ET.fromstring(r.text)
-    except ET.ParseError:
-        return {}, {}
-
-    ns_uri = root.tag.split("}")[0][1:] if root.tag.startswith("{") else ""
-    prefix = f"{{{ns_uri}}}" if ns_uri else ""
-
-    for ts in root.findall(f".//{prefix}TimeSeries"):
-        for period in ts.findall(f"{prefix}Period"):
-            start_el = period.find(f"{prefix}timeInterval/{prefix}start")
-            res_el   = period.find(f"{prefix}resolution")
-            if start_el is None or res_el is None:
-                continue
-            start_dt   = datetime.strptime(start_el.text, "%Y-%m-%dT%H:%MZ")
-            resolution = res_el.text
-            for point in period.findall(f"{prefix}Point"):
-                pos_el = point.find(f"{prefix}position")
-                qty_el = point.find(f"{prefix}quantity")
-                if pos_el is None or qty_el is None:
-                    continue
-                try:
-                    pos = int(pos_el.text)
-                    qty = float(qty_el.text)
-                except (ValueError, TypeError):
-                    continue
-                if resolution == "PT60M":
-                    dt = start_dt + __import__('datetime').timedelta(hours=pos - 1)
-                elif resolution == "PT15M":
-                    dt = start_dt + __import__('datetime').timedelta(minutes=(pos - 1) * 15)
-                else:
-                    continue
-                monthly[dt.month].append(qty)
-                hourly[dt.hour].append(qty)
-
-    monthly_avg = {m: sum(v) / len(v) for m, v in monthly.items() if v}
-    hourly_avg  = {h: sum(v) / len(v) for h, v in hourly.items() if v}
-    return monthly_avg, hourly_avg
-
-def collect_consumption_data():
-    print("Henter forbrug...")
-    monthly_rows = []
-    hourly_rows  = []
-    for zone, eic in CONSUMPTION_ZONES.items():
-        for year in fetch_years:
-            print(f"  {zone} {year}...")
-            monthly, hourly = fetch_consumption_monthly(eic, year, ENTSOE_TOKEN)
-            for month, val in monthly.items():
-                if year == current_year and month > last_full_month:
-                    continue
-                monthly_rows.append({
-                    "zone": zone, "year": year,
-                    "month": month, "value_mwh": val
-                })
-            for hour, val in hourly.items():
-                hourly_rows.append({
-                    "zone": zone, "year": year,
-                    "hour": hour, "value_mwh": val
-                })
-            time.sleep(1)
-    if monthly_rows:
-        supabase.table("consumption").upsert(
-            monthly_rows, on_conflict="zone,year,month"
-        ).execute()
-    if hourly_rows:
-        supabase.table("consumption_hourly").upsert(
-            hourly_rows, on_conflict="zone,year,hour"
-        ).execute()
-    print("Forbrug gemt.")
 
 def collect_all():
     print(f"\n{'='*40}\nDataindsamling startet: {datetime.now()}\n{'='*40}")
     collect_dk_data()
     collect_gas_data()
     collect_hydro_data()
-    collect_capacity_data()
-    collect_consumption_data()
     print(f"\nAlt data gemt: {datetime.now()}")
 
 if __name__ == "__main__":
