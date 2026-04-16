@@ -58,6 +58,36 @@ def monthly_weighted(price_dict, prod_dict):
         for month in monthly_prod
     }
 
+def fetch_all_records(dataset, area, start="2020-01-01"):
+    all_records = []
+    limit = 10000
+    offset = 0
+    
+    while True:
+        r = requests.get(f"https://api.energidataservice.dk/dataset/{dataset}", params={
+            "start": start,
+            "end": end,
+            "filter": f'{{"PriceArea":"{area}"}}',
+            "limit": limit,
+            "offset": offset,
+            "sort": "HourDK asc",
+        })
+        
+        records = r.json().get("records", [])
+        if not records:
+            break
+            
+        all_records.extend(records)
+        
+        if len(records) < limit:
+            break
+            
+        offset += limit
+        time.sleep(0.2)
+    
+    return all_records
+
+
 def collect_dk_data():
     print("Henter DK data...")
     hourly_prices = {area: {} for area in areas}
@@ -66,37 +96,19 @@ def collect_dk_data():
     onshore_prod  = {area: {} for area in areas}
 
     for area in areas:
-        # 1. Hent ALLE priser i ét hug (kombinerer Spot og DayAhead for at undgå huller)
-        # Vi henter fra 2020 til dags dato
-        r = requests.get("https://api.energidataservice.dk/dataset/Elspotprices", params={
-            "start": "2020-01-01",
-            "end": end,
-            "filter": f'{{"PriceArea":"{area}"}}',
-            "columns": "HourDK,SpotPriceDKK",
-            "limit": 1000000
-        })
-        
-        for rec in r.json().get("records", []):
+        # Priser
+        for rec in fetch_all_records("Elspotprices", area):
             dt = datetime.fromisoformat(rec["HourDK"].replace('Z', '+00:00'))
-            # Filtrér kun den nuværende måned fra, så vi altid har fulde måneder
             if dt.year == current_year and dt.month >= current_month:
                 continue
             hourly_prices[area][dt] = rec["SpotPriceDKK"]
 
-        # 2. Hent produktion med samme tidsfilter
-        r = requests.get("https://api.energidataservice.dk/dataset/ProductionConsumptionSettlement", params={
-            "start": "2020-01-01", 
-            "end": end,
-            "filter": f'{{"PriceArea":"{area}"}}', 
-            "limit": 1000000 # Øget limit så vi ikke mister data
-        })
-        
-        for rec in r.json().get("records", []):
+        # Produktion
+        for rec in fetch_all_records("ProductionConsumptionSettlement", area):
             dt = datetime.fromisoformat(rec["HourDK"].replace('Z', '+00:00'))
             if dt.year == current_year and dt.month >= current_month:
                 continue
             
-            # Gem produktion
             solar_prod[area][dt] = (rec.get("SolarPowerLt10kW_MWh", 0) or 0) + \
                                    (rec.get("SolarPowerGe10Lt40kW_MWh", 0) or 0) + \
                                    (rec.get("SolarPowerGe40kW_MWh", 0) or 0)
@@ -107,6 +119,7 @@ def collect_dk_data():
             onshore_prod[area][dt] = (rec.get("OnshoreWindLt50kW_MWh", 0) or 0) + \
                                      (rec.get("OnshoreWindGe50kW_MWh", 0) or 0)
 
+    
     # Når data gemmes i dk_prices tabellen
     for area in areas:
         avg_prices   = monthly_avg_prices(hourly_prices[area])
