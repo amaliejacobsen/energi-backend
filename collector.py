@@ -63,6 +63,10 @@ def fetch_all_records(dataset, area, start="2020-01-01"):
     limit = 10000
     offset = 0
     
+    # Dynamisk valg af sorterings-kolonne
+    # DayAheadPrices bruger 'TimeDK', de andre bruger 'HourDK'
+    sort_column = "TimeDK" if dataset == "DayAheadPrices" else "HourDK"
+    
     while True:
         try:
             r = requests.get(f"https://api.energidataservice.dk/dataset/{dataset}", params={
@@ -71,13 +75,15 @@ def fetch_all_records(dataset, area, start="2020-01-01"):
                 "filter": f'{{"PriceArea":"{area}"}}',
                 "limit": limit,
                 "offset": offset,
-                "sort": "HourDK asc" if "HourDK" in dataset or dataset == "Elspotprices" else "TimeDK asc",
+                "sort": f"{sort_column} asc",
             }, timeout=30)
             
-            # Tjek om vi fik en fejl fra serveren (f.eks. 500 eller 504)
             r.raise_for_status()
             
-            # Tjek om indholdet faktisk er JSON
+            # Sikkerhedstjek: Er svaret tomt?
+            if not r.text.strip():
+                break
+                
             data = r.json()
             records = data.get("records", [])
             
@@ -90,15 +96,12 @@ def fetch_all_records(dataset, area, start="2020-01-01"):
                 break
                 
             offset += limit
-            time.sleep(0.5) # Øget sleep lidt for at undgå rate-limiting
+            time.sleep(0.3)
             
-        except requests.exceptions.RequestException as e:
-            print(f"Netværksfejl ved {dataset} ({area}): {e}")
-            break
-        except ValueError:
-            print(f"API fejl: Modtog ikke JSON fra {dataset}. Svaret var: {r.text[:100]}")
-            break
-    
+        except Exception as e:
+            print(f"Fejl ved hentning af {dataset} ({area}): {e}")
+            break # Stop loopet for dette datasæt, men lad programmet køre videre
+            
     return all_records
 
 
