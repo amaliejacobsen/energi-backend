@@ -68,10 +68,12 @@ def collect_dk_data():
     for area in areas:
         # 1. Hent ALLE priser i ét hug (kombinerer Spot og DayAhead for at undgå huller)
         # Vi henter fra 2020 til dags dato
-        r = requests.get("https://api.energidataservice.dk/dataset/PowerSystemRightNow", params={
-            "start": "2020-01-01", 
+        r = requests.get("https://api.energidataservice.dk/dataset/Elspotprices", params={
+            "start": "2020-01-01",
             "end": end,
             "filter": f'{{"PriceArea":"{area}"}}',
+            "columns": "HourDK,SpotPriceDKK",
+            "limit": 1000000
         })
         
         for rec in r.json().get("records", []):
