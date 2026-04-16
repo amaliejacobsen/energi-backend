@@ -64,26 +64,40 @@ def fetch_all_records(dataset, area, start="2020-01-01"):
     offset = 0
     
     while True:
-        r = requests.get(f"https://api.energidataservice.dk/dataset/{dataset}", params={
-            "start": start,
-            "end": end,
-            "filter": f'{{"PriceArea":"{area}"}}',
-            "limit": limit,
-            "offset": offset,
-            "sort": "HourDK asc",
-        })
-        
-        records = r.json().get("records", [])
-        if not records:
-            break
+        try:
+            r = requests.get(f"https://api.energidataservice.dk/dataset/{dataset}", params={
+                "start": start,
+                "end": end,
+                "filter": f'{{"PriceArea":"{area}"}}',
+                "limit": limit,
+                "offset": offset,
+                "sort": "HourDK asc" if "HourDK" in dataset or dataset == "Elspotprices" else "TimeDK asc",
+            }, timeout=30)
             
-        all_records.extend(records)
-        
-        if len(records) < limit:
-            break
+            # Tjek om vi fik en fejl fra serveren (f.eks. 500 eller 504)
+            r.raise_for_status()
             
-        offset += limit
-        time.sleep(0.2)
+            # Tjek om indholdet faktisk er JSON
+            data = r.json()
+            records = data.get("records", [])
+            
+            if not records:
+                break
+                
+            all_records.extend(records)
+            
+            if len(records) < limit:
+                break
+                
+            offset += limit
+            time.sleep(0.5) # Øget sleep lidt for at undgå rate-limiting
+            
+        except requests.exceptions.RequestException as e:
+            print(f"Netværksfejl ved {dataset} ({area}): {e}")
+            break
+        except ValueError:
+            print(f"API fejl: Modtog ikke JSON fra {dataset}. Svaret var: {r.text[:100]}")
+            break
     
     return all_records
 
