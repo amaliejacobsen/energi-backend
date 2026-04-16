@@ -108,7 +108,7 @@ def collect_dk_data():
             if dt.year == current_year and dt.month >= current_month:
                 continue
             if dt not in hourly_prices[area]:  # Undgå at overskrive gamle data
-            hourly_prices[area][dt] = rec["DayAheadPriceDKK"]
+                hourly_prices[area][dt] = rec["DayAheadPriceDKK"]
 
         
         # Produktion
