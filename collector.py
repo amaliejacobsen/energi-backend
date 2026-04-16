@@ -103,6 +103,14 @@ def collect_dk_data():
                 continue
             hourly_prices[area][dt] = rec["SpotPriceDKK"]
 
+        for rec in fetch_all_records("DayAheadPrices", area):
+            dt = datetime.fromisoformat(rec["TimeDK"].replace('Z', '+00:00'))
+            if dt.year == current_year and dt.month >= current_month:
+                continue
+            if dt not in hourly_prices[area]:  # Undgå at overskrive gamle data
+            hourly_prices[area][dt] = rec["DayAheadPriceDKK"]
+
+        
         # Produktion
         for rec in fetch_all_records("ProductionConsumptionSettlement", area):
             dt = datetime.fromisoformat(rec["HourDK"].replace('Z', '+00:00'))
@@ -468,37 +476,5 @@ def collect_all():
     collect_consumption_data()
     print(f"\nSlut: {datetime.now()}")
 
-def debug_prices(area="DK1"):
-    print(f"\nDebugger priser for {area}...")
-    
-    all_records = fetch_all_records("Elspotprices", area)
-    print(f"Antal records hentet: {len(all_records)}")
-    
-    if not all_records:
-        print("INGEN DATA HENTET!")
-        return
-    
-    print(f"Første record: {all_records[0]}")
-    print(f"Sidste record: {all_records[-1]}")
-    
-    monthly_counts = defaultdict(int)
-    monthly_prices = defaultdict(list)
-    
-    for rec in all_records:
-        dt = datetime.fromisoformat(rec["HourDK"].replace('Z', '+00:00'))
-        key = dt.strftime("%Y-%m")
-        monthly_counts[key] += 1
-        if rec["SpotPriceDKK"] is not None:
-            monthly_prices[key].append(rec["SpotPriceDKK"])
-    
-    print("\nMåned          | Records | Avg pris")
-    print("-" * 45)
-    for month in sorted(monthly_counts.keys()):
-        count = monthly_counts[month]
-        prices = monthly_prices[month]
-        avg = sum(prices) / len(prices) if prices else 0
-        missing = "⚠️ MANGLER DATA" if count < 600 else ""
-        print(f"{month}  | {count:>7} | {avg:>8.1f} DKK/MWh  {missing}")
-
 if __name__ == "__main__":
-    debug_prices("DK1")
+    collect_all()
