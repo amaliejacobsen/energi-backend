@@ -66,58 +66,45 @@ def collect_dk_data():
     onshore_prod  = {area: {} for area in areas}
 
     for area in areas:
-        # Hent priser (Spot)
+        # 1. Hent ALLE priser i ét hug (kombinerer Spot og DayAhead for at undgå huller)
+        # Vi henter fra 2020 til dags dato
         r = requests.get("https://api.energidataservice.dk/dataset/Elspotprices", params={
-            "start": "2020-01-01", "end": "2025-12-31",
-            "filter": f'{{"PriceArea":"{area}"}}', "limit": 100000
+            "start": "2020-01-01", 
+            "end": end, # Brug den dynamiske 'end' variabel
+            "filter": f'{{"PriceArea":"{area}"}}', 
+            "sort": "HourDK ASC"
         })
+        
         for rec in r.json().get("records", []):
-            dt = datetime.fromisoformat(rec["HourDK"])
-            # RETTELSE: Spring nuværende måned over
-            if dt.year == current_year and dt.month > last_full_month:
+            dt = datetime.fromisoformat(rec["HourDK"].replace('Z', '+00:00'))
+            # Filtrér kun den nuværende måned fra, så vi altid har fulde måneder
+            if dt.year == current_year and dt.month >= current_month:
                 continue
             hourly_prices[area][dt] = rec["SpotPriceDKK"]
 
-        # Hent priser (Day Ahead - Nyere)
-        r = requests.get("https://api.energidataservice.dk/dataset/DayAheadPrices", params={
-            "start": "2026-01-01", "end": end,
-            "filter": f'{{"PriceArea":"{area}"}}', "limit": 100000
-        })
-        quarter_prices = defaultdict(list)
-        for rec in r.json().get("records", []):
-            dt   = datetime.fromisoformat(rec["TimeDK"])
-            # RETTELSE: Spring nuværende måned over
-            if dt.year == current_year and dt.month > last_full_month:
-                continue
-            hour = dt.replace(minute=0, second=0, microsecond=0)
-            quarter_prices[hour].append(rec["DayAheadPriceDKK"])
-        for hour, prices in quarter_prices.items():
-            hourly_prices[area][hour] = sum(prices) / len(prices)
-
-        # Hent produktion
+        # 2. Hent produktion med samme tidsfilter
         r = requests.get("https://api.energidataservice.dk/dataset/ProductionConsumptionSettlement", params={
-            "start": "2020-01-01", "end": end,
-            "filter": f'{{"PriceArea":"{area}"}}', "limit": 100000
+            "start": "2020-01-01", 
+            "end": end,
+            "filter": f'{{"PriceArea":"{area}"}}', 
+            "limit": 1000000 # Øget limit så vi ikke mister data
         })
+        
         for rec in r.json().get("records", []):
-            dt = datetime.fromisoformat(rec["HourDK"])
-            # RETTELSE: Spring nuværende måned over
-            if dt.year == current_year and dt.month > last_full_month:
+            dt = datetime.fromisoformat(rec["HourDK"].replace('Z', '+00:00'))
+            if dt.year == current_year and dt.month >= current_month:
                 continue
             
-            solar_prod[area][dt] = (
-                rec.get("SolarPowerLt10kW_MWh", 0) +
-                rec.get("SolarPowerGe10Lt40kW_MWh", 0) +
-                rec.get("SolarPowerGe40kW_MWh", 0)
-            )
-            offshore_prod[area][dt] = (
-                rec.get("OffshoreWindLt100MW_MWh", 0) +
-                rec.get("OffshoreWindGe100MW_MWh", 0)
-            )
-            onshore_prod[area][dt] = (
-                rec.get("OnshoreWindLt50kW_MWh", 0) +
-                rec.get("OnshoreWindGe50kW_MWh", 0)
-            )
+            # Gem produktion
+            solar_prod[area][dt] = (rec.get("SolarPowerLt10kW_MWh", 0) or 0) + \
+                                   (rec.get("SolarPowerGe10Lt40kW_MWh", 0) or 0) + \
+                                   (rec.get("SolarPowerGe40kW_MWh", 0) or 0)
+            
+            offshore_prod[area][dt] = (rec.get("OffshoreWindLt100MW_MWh", 0) or 0) + \
+                                      (rec.get("OffshoreWindGe100MW_MWh", 0) or 0)
+            
+            onshore_prod[area][dt] = (rec.get("OnshoreWindLt50kW_MWh", 0) or 0) + \
+                                     (rec.get("OnshoreWindGe50kW_MWh", 0) or 0)
 
     # Når data gemmes i dk_prices tabellen
     for area in areas:
