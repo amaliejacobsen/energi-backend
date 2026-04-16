@@ -66,15 +66,19 @@ def collect_dk_data():
     onshore_prod  = {area: {} for area in areas}
 
     for area in areas:
-        # RETTELSE 1: Sat til 2025-12-31 så hele 2025 dækkes
+        # Hent priser (Spot)
         r = requests.get("https://api.energidataservice.dk/dataset/Elspotprices", params={
             "start": "2020-01-01", "end": "2025-12-31",
             "filter": f'{{"PriceArea":"{area}"}}', "limit": 100000
         })
         for rec in r.json().get("records", []):
             dt = datetime.fromisoformat(rec["HourDK"])
+            # RETTELSE: Spring nuværende måned over
+            if dt.year == current_year and dt.month > last_full_month:
+                continue
             hourly_prices[area][dt] = rec["SpotPriceDKK"]
 
+        # Hent priser (Day Ahead - Nyere)
         r = requests.get("https://api.energidataservice.dk/dataset/DayAheadPrices", params={
             "start": "2026-01-01", "end": end,
             "filter": f'{{"PriceArea":"{area}"}}', "limit": 100000
@@ -82,17 +86,25 @@ def collect_dk_data():
         quarter_prices = defaultdict(list)
         for rec in r.json().get("records", []):
             dt   = datetime.fromisoformat(rec["TimeDK"])
+            # RETTELSE: Spring nuværende måned over
+            if dt.year == current_year and dt.month > last_full_month:
+                continue
             hour = dt.replace(minute=0, second=0, microsecond=0)
             quarter_prices[hour].append(rec["DayAheadPriceDKK"])
         for hour, prices in quarter_prices.items():
             hourly_prices[area][hour] = sum(prices) / len(prices)
 
+        # Hent produktion
         r = requests.get("https://api.energidataservice.dk/dataset/ProductionConsumptionSettlement", params={
             "start": "2020-01-01", "end": end,
             "filter": f'{{"PriceArea":"{area}"}}', "limit": 100000
         })
         for rec in r.json().get("records", []):
             dt = datetime.fromisoformat(rec["HourDK"])
+            # RETTELSE: Spring nuværende måned over
+            if dt.year == current_year and dt.month > last_full_month:
+                continue
+            
             solar_prod[area][dt] = (
                 rec.get("SolarPowerLt10kW_MWh", 0) +
                 rec.get("SolarPowerGe10Lt40kW_MWh", 0) +
@@ -107,6 +119,7 @@ def collect_dk_data():
                 rec.get("OnshoreWindGe50kW_MWh", 0)
             )
 
+    # Når data gemmes i dk_prices tabellen
     for area in areas:
         avg_prices   = monthly_avg_prices(hourly_prices[area])
         avg_solar    = monthly_weighted(hourly_prices[area], solar_prod[area])
@@ -115,13 +128,19 @@ def collect_dk_data():
 
         all_months = sorted(set(avg_prices) | set(avg_solar) | set(avg_offshore) | set(avg_onshore))
         rows = []
-        for month in all_months:
-            spot  = avg_prices.get(month, 0)
-            solar = avg_solar.get(month, 0)
-            offsh = avg_offshore.get(month, 0)
-            onsh  = avg_onshore.get(month, 0)
+        for month_str in all_months:
+            # RETTELSE: month_str er "YYYY-MM", så vi tjekker slutningen
+            y, m = map(int, month_str.split("-"))
+            if y == current_year and m > last_full_month:
+                continue
+                
+            spot  = avg_prices.get(month_str, 0)
+            solar = avg_solar.get(month_str, 0)
+            offsh = avg_offshore.get(month_str, 0)
+            onsh  = avg_onshore.get(month_str, 0)
+            
             rows.append({
-                "area": area, "month": month,
+                "area": area, "month": month_str,
                 "spot_price": spot,
                 "solar_weighted": solar,
                 "offshore_weighted": offsh,
@@ -130,8 +149,10 @@ def collect_dk_data():
                 "offshore_capture_rate": (offsh / spot * 100) if spot else 0,
                 "onshore_capture_rate":  (onsh  / spot * 100) if spot else 0,
             })
-        supabase.table("dk_prices").upsert(rows, on_conflict="area,month").execute()
+        if rows:
+            supabase.table("dk_prices").upsert(rows, on_conflict="area,month").execute()
 
+    
     for area in areas:
         for source_name, prod_dict in [
             ("solar", solar_prod[area]),
