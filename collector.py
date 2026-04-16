@@ -69,7 +69,7 @@ def collect_dk_data():
         # 1. Hent ALLE priser i ét hug (kombinerer Spot og DayAhead for at undgå huller)
         # Vi henter fra 2020 til dags dato
         r = requests.get("https://api.energidataservice.dk/dataset/PowerSystemRightNow", params={
-            "start": "2025-10-01", 
+            "start": "2020-01-01", 
             "end": end,
             "filter": f'{{"PriceArea":"{area}"}}',
         })
