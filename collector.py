@@ -20,6 +20,24 @@ current_date    = datetime.today()
 end             = current_date.strftime("%Y-%m-%d")
 current_year    = current_date.year
 current_month   = current_date.month
+current_day     = current_date.day  # Vi skal bruge dagen for at tjekke "14 dage"
+
+# LOGIK: Hvis vi er mindre end 14 dage inde i måneden, 
+# vil vi kun se data til og med TO måneder siden.
+# Hvis vi er over dag 14, tager vi den foregående måned med.
+if current_day >= 14:
+    # Vi er 14 dage inde, tag hele sidste måned med
+    last_full_month = current_month - 1 if current_month > 1 else 12
+else:
+    # Vi er tidligt på måneden, tag kun data med til og med 2 måneder siden
+    # (Da data for sidste måned måske ikke er komplet afregnet endnu)
+    last_full_month = current_month - 2 if current_month > 2 else (11 if current_month == 1 else 12)
+
+# Husk at justere current_year hvis last_full_month ruller over til december (12)
+if last_full_month == 12 and current_month < 3:
+    check_year = current_year - 1
+else:
+    check_year = current_year
 
 # Sikrer at hvis vi er i januar (1), så bliver sidste fulde måned december (12)
 last_full_month = current_month - 1 if current_month > 1 else 12
@@ -112,27 +130,33 @@ def collect_dk_data():
     offshore_prod = {area: {} for area in areas}
     onshore_prod  = {area: {} for area in areas}
 
-    for area in areas:
-        # Priser
+# Priser (Gamle/Historiske)
         for rec in fetch_all_records("Elspotprices", area):
             dt = datetime.fromisoformat(rec["HourDK"].replace('Z', '+00:00'))
-            if dt.year == current_year and dt.month >= current_month:
+            # NY FILTRERING: Brug last_full_month i stedet for current_month
+            if dt.year == current_year and dt.month > last_full_month:
                 continue
             hourly_prices[area][dt] = rec["SpotPriceDKK"]
-
+            
+# Priser (Nye/Aktuelle)
         for rec in fetch_all_records("DayAheadPrices", area):
             dt = datetime.fromisoformat(rec["TimeDK"].replace('Z', '+00:00'))
-            if dt.year == current_year and dt.month >= current_month:
+            # NY FILTRERING: Brug last_full_month
+            if dt.year == current_year and dt.month > last_full_month:
                 continue
-            if dt not in hourly_prices[area]:  # Undgå at overskrive gamle data
+            if dt not in hourly_prices[area]:
                 hourly_prices[area][dt] = rec["DayAheadPriceDKK"]
 
         
         # Produktion
+# Produktion (Afregnede data)
         for rec in fetch_all_records("ProductionConsumptionSettlement", area):
             dt = datetime.fromisoformat(rec["HourDK"].replace('Z', '+00:00'))
-            if dt.year == current_year and dt.month >= current_month:
+            # NY FILTRERING: Brug last_full_month
+            if dt.year == current_year and dt.month > last_full_month:
                 continue
+            
+            # ... (resten af din produktion-logik herunder)
             
             solar_prod[area][dt] = (rec.get("SolarPowerLt10kW_MWh", 0) or 0) + \
                                    (rec.get("SolarPowerGe10Lt40kW_MWh", 0) or 0) + \
