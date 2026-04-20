@@ -204,7 +204,7 @@ def collect_dk_data():
             for dt, prod in prod_dict.items():
                 monthly_by_year[dt.year][dt.month] += prod
 
-rows = []
+            rows = []
             for year, months in monthly_by_year.items():
                 for month, val in months.items():
                     if year == current_year and month > last_full_month:
