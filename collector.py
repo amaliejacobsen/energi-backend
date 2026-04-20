@@ -387,12 +387,16 @@ def fetch_capacity_for_eic(eic, year):
         elif r.status_code in (503, 429):
             time.sleep(10 * (attempt + 1))
         else:
+            print(f"    ENTSOE fejl status: {r.status_code} for {eic} {year}")
             return {}
     else:
         return {}
 
     if "No matching data found" in r.text:
+        print(f"    ENTSOE: No matching data for {eic} {year}")
         return {}
+    print(f"    ENTSOE status: {r.status_code}, tegn: {len(r.text)}, start: {r.text[:100]}")
+    
     try:
         root = ET.fromstring(r.text)
     except ET.ParseError:
