@@ -204,9 +204,11 @@ def collect_dk_data():
             for dt, prod in prod_dict.items():
                 monthly_by_year[dt.year][dt.month] += prod
 
-            rows = []
+rows = []
             for year, months in monthly_by_year.items():
                 for month, val in months.items():
+                    if year == current_year and month > last_full_month:
+                        continue
                     rows.append({
                         "area": area, "source": source_name,
                         "year": year, "month": month, "value_mwh": val
@@ -495,7 +497,7 @@ def collect_consumption_data():
                 h_rows.append({"zone": zone, "year": year, "hour": hour, "value_mwh": val})
             time.sleep(1)
 
-    if m_rows: supabase.table("consumption_monthly").upsert(m_rows, on_conflict="zone,year,month").execute()
+    if m_rows: supabase.table("consumption").upsert(m_rows, on_conflict="zone,year,month").execute()
     if h_rows: supabase.table("consumption_hourly").upsert(h_rows, on_conflict="zone,year,hour").execute()
     print("Forbrugsdata gemt.")
 
