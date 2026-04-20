@@ -130,46 +130,39 @@ def collect_dk_data():
     offshore_prod = {area: {} for area in areas}
     onshore_prod  = {area: {} for area in areas}
 
-# Priser (Gamle/Historiske)
+    for area in areas:
+        # Priser (Gamle/Historiske)
         for rec in fetch_all_records("Elspotprices", area):
             dt = datetime.fromisoformat(rec["HourDK"].replace('Z', '+00:00'))
-            # NY FILTRERING: Brug last_full_month i stedet for current_month
             if dt.year == current_year and dt.month > last_full_month:
                 continue
             hourly_prices[area][dt] = rec["SpotPriceDKK"]
-            
-# Priser (Nye/Aktuelle)
+
+        # Priser (Nye/Aktuelle)
         for rec in fetch_all_records("DayAheadPrices", area):
             dt = datetime.fromisoformat(rec["TimeDK"].replace('Z', '+00:00'))
-            # NY FILTRERING: Brug last_full_month
             if dt.year == current_year and dt.month > last_full_month:
                 continue
             if dt not in hourly_prices[area]:
                 hourly_prices[area][dt] = rec["DayAheadPriceDKK"]
 
-        
-        # Produktion
-# Produktion (Afregnede data)
+        # Produktion (Afregnede data)
         for rec in fetch_all_records("ProductionConsumptionSettlement", area):
             dt = datetime.fromisoformat(rec["HourDK"].replace('Z', '+00:00'))
-            # NY FILTRERING: Brug last_full_month
             if dt.year == current_year and dt.month > last_full_month:
                 continue
-            
-            # ... (resten af din produktion-logik herunder)
-            
+
             solar_prod[area][dt] = (rec.get("SolarPowerLt10kW_MWh", 0) or 0) + \
                                    (rec.get("SolarPowerGe10Lt40kW_MWh", 0) or 0) + \
                                    (rec.get("SolarPowerGe40kW_MWh", 0) or 0)
-            
+
             offshore_prod[area][dt] = (rec.get("OffshoreWindLt100MW_MWh", 0) or 0) + \
                                       (rec.get("OffshoreWindGe100MW_MWh", 0) or 0)
-            
+
             onshore_prod[area][dt] = (rec.get("OnshoreWindLt50kW_MWh", 0) or 0) + \
                                      (rec.get("OnshoreWindGe50kW_MWh", 0) or 0)
 
-    
-    # Når data gemmes i dk_prices tabellen
+    # Gem i dk_prices
     for area in areas:
         avg_prices   = monthly_avg_prices(hourly_prices[area])
         avg_solar    = monthly_weighted(hourly_prices[area], solar_prod[area])
@@ -179,16 +172,15 @@ def collect_dk_data():
         all_months = sorted(set(avg_prices) | set(avg_solar) | set(avg_offshore) | set(avg_onshore))
         rows = []
         for month_str in all_months:
-            # RETTELSE: month_str er "YYYY-MM", så vi tjekker slutningen
             y, m = map(int, month_str.split("-"))
             if y == current_year and m > last_full_month:
                 continue
-                
+
             spot  = avg_prices.get(month_str, 0)
             solar = avg_solar.get(month_str, 0)
             offsh = avg_offshore.get(month_str, 0)
             onsh  = avg_onshore.get(month_str, 0)
-            
+
             rows.append({
                 "area": area, "month": month_str,
                 "spot_price": spot,
@@ -202,7 +194,6 @@ def collect_dk_data():
         if rows:
             supabase.table("dk_prices").upsert(rows, on_conflict="area,month").execute()
 
-    
     for area in areas:
         for source_name, prod_dict in [
             ("solar", solar_prod[area]),
