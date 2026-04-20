@@ -194,7 +194,7 @@ def collect_dk_data():
         if rows:
             supabase.table("dk_prices").upsert(rows, on_conflict="area,month").execute()
 
-    for area in areas:
+for area in areas:
         for source_name, prod_dict in [
             ("solar", solar_prod[area]),
             ("offshore", offshore_prod[area]),
