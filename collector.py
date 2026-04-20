@@ -431,6 +431,10 @@ def collect_capacity_data():
                     combined[psr] += mw
                 time.sleep(1)
 
+            if combined:
+                print(f"  Fandt {len(combined)} PSR typer for {country} {year}")
+            else:
+                print(f"  INGEN data for {country} {year}")
             for psr, mw in combined.items():
                 rows.append({
                     "country": country, "psr_type": psr,
