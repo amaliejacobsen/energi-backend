@@ -20,27 +20,30 @@ current_date    = datetime.today()
 end             = current_date.strftime("%Y-%m-%d")
 current_year    = current_date.year
 current_month   = current_date.month
-current_day     = current_date.day  # Vi skal bruge dagen for at tjekke "14 dage"
+current_day     = current_date.day
 
-# LOGIK: Hvis vi er mindre end 14 dage inde i måneden, 
-# vil vi kun se data til og med TO måneder siden.
-# Hvis vi er over dag 14, tager vi den foregående måned med.
+# LOGIK: Hvis vi er dag 14 eller senere, inkluder foregående måned.
+# Hvis vi er tidligere end dag 14, kun data til og med 2 måneder siden.
 if current_day >= 14:
-    # Vi er 14 dage inde, tag hele sidste måned med
-    last_full_month = current_month - 1 if current_month > 1 else 12
+    if current_month > 1:
+        last_full_month = current_month - 1
+    else:
+        last_full_month = 12  # Januar -> December sidste år
 else:
-    # Vi er tidligt på måneden, tag kun data med til og med 2 måneder siden
-    # (Da data for sidste måned måske ikke er komplet afregnet endnu)
-    last_full_month = current_month - 2 if current_month > 2 else (11 if current_month == 1 else 12)
+    if current_month > 2:
+        last_full_month = current_month - 2
+    elif current_month == 2:
+        last_full_month = 12  # Februar -> December sidste år
+    else:  # Januar
+        last_full_month = 11  # Januar -> November sidste år
 
-# Husk at justere current_year hvis last_full_month ruller over til december (12)
+# Juster årstal hvis last_full_month er december men vi er i starten af året
 if last_full_month == 12 and current_month < 3:
-    check_year = current_year - 1
+    last_full_year = current_year - 1
 else:
-    check_year = current_year
+    last_full_year = current_year
 
-# Sikrer at hvis vi er i januar (1), så bliver sidste fulde måned december (12)
-last_full_month = current_month - 1 if current_month > 1 else 12
+print(f"Dato: {current_date.strftime('%Y-%m-%d')} | Henter data til og med: {last_full_year}-{last_full_month:02d}")
 
 fetch_years     = list(range(2020, current_year + 1))
 areas           = ["DK1", "DK2"]
@@ -76,13 +79,19 @@ def monthly_weighted(price_dict, prod_dict):
         for month in monthly_prod
     }
 
+def is_too_recent(year, month):
+    """Returnerer True hvis år/måned er nyere end last_full_month/last_full_year."""
+    if year > last_full_year:
+        return True
+    if year == last_full_year and month > last_full_month:
+        return True
+    return False
+
 def fetch_all_records(dataset, area, start="2020-01-01"):
     all_records = []
     limit = 10000
     offset = 0
     
-    # Dynamisk valg af sorterings-kolonne
-    # DayAheadPrices bruger 'TimeDK', de andre bruger 'HourDK'
     sort_column = "TimeDK" if dataset == "DayAheadPrices" else "HourDK"
     
     while True:
@@ -98,7 +107,6 @@ def fetch_all_records(dataset, area, start="2020-01-01"):
             
             r.raise_for_status()
             
-            # Sikkerhedstjek: Er svaret tomt?
             if not r.text.strip():
                 break
                 
@@ -118,7 +126,7 @@ def fetch_all_records(dataset, area, start="2020-01-01"):
             
         except Exception as e:
             print(f"Fejl ved hentning af {dataset} ({area}): {e}")
-            break # Stop loopet for dette datasæt, men lad programmet køre videre
+            break
             
     return all_records
 
@@ -134,14 +142,14 @@ def collect_dk_data():
         # Priser (Gamle/Historiske)
         for rec in fetch_all_records("Elspotprices", area):
             dt = datetime.fromisoformat(rec["HourDK"].replace('Z', '+00:00'))
-            if dt.year == current_year and dt.month > last_full_month:
+            if is_too_recent(dt.year, dt.month):
                 continue
             hourly_prices[area][dt] = rec["SpotPriceDKK"]
 
         # Priser (Nye/Aktuelle)
         for rec in fetch_all_records("DayAheadPrices", area):
             dt = datetime.fromisoformat(rec["TimeDK"].replace('Z', '+00:00'))
-            if dt.year == current_year and dt.month > last_full_month:
+            if is_too_recent(dt.year, dt.month):
                 continue
             if dt not in hourly_prices[area]:
                 hourly_prices[area][dt] = rec["DayAheadPriceDKK"]
@@ -149,7 +157,7 @@ def collect_dk_data():
         # Produktion (Afregnede data)
         for rec in fetch_all_records("ProductionConsumptionSettlement", area):
             dt = datetime.fromisoformat(rec["HourDK"].replace('Z', '+00:00'))
-            if dt.year == current_year and dt.month > last_full_month:
+            if is_too_recent(dt.year, dt.month):
                 continue
 
             solar_prod[area][dt] = (rec.get("SolarPowerLt10kW_MWh", 0) or 0) + \
@@ -173,7 +181,7 @@ def collect_dk_data():
         rows = []
         for month_str in all_months:
             y, m = map(int, month_str.split("-"))
-            if y == current_year and m > last_full_month:
+            if is_too_recent(y, m):
                 continue
 
             spot  = avg_prices.get(month_str, 0)
@@ -194,7 +202,7 @@ def collect_dk_data():
         if rows:
             supabase.table("dk_prices").upsert(rows, on_conflict="area,month").execute()
 
-for area in areas:
+    for area in areas:
         for source_name, prod_dict in [
             ("solar", solar_prod[area]),
             ("offshore", offshore_prod[area]),
@@ -207,7 +215,7 @@ for area in areas:
             rows = []
             for year, months in monthly_by_year.items():
                 for month, val in months.items():
-                    if year == current_year and month > last_full_month:
+                    if is_too_recent(year, month):
                         continue
                     rows.append({
                         "area": area, "source": source_name,
@@ -282,9 +290,8 @@ def collect_hydro_data():
                 print(f"  {zone} {year}...")
                 monthly = fetch_hydro_monthly_a75(eic, year, ENTSOE_TOKEN)
                 for month, val in monthly.items():
-                    if year == current_year and month > last_full_month:
+                    if is_too_recent(year, month):
                         continue
-                    
                     rows.append({
                         "country": country, 
                         "zone": zone,
@@ -342,9 +349,8 @@ def collect_gas_data():
             print(f"  {area_name} {year}...")
             monthly = fetch_gas_storage_monthly(area_config, year, AGSI_KEY)
             for month, val in monthly.items():
-                if year == current_year and month > last_full_month:
+                if is_too_recent(year, month):
                     continue
-                
                 rows.append({
                     "area": area_name, "year": year,
                     "month": month, "full_pct": val
@@ -418,7 +424,6 @@ def collect_capacity_data():
                 })
             time.sleep(1)
 
-    # RETTELSE 2: Flyttet helt ud af loops for effektivitet
     if rows:
         supabase.table("installed_capacity").upsert(rows, on_conflict="country,psr_type,year").execute()
         print(f"Capacity data gemt ({len(rows)} rækker).")
@@ -489,10 +494,9 @@ def collect_consumption_data():
             monthly, hourly = fetch_consumption_monthly(eic, year, ENTSOE_TOKEN)
 
             for month, val in monthly.items():
-                if year == current_year and month > last_full_month: continue
+                if is_too_recent(year, month): continue
                 m_rows.append({"zone": zone, "year": year, "month": month, "value_mwh": val})
             
-            # RETTELSE 3: Rykket ind under year-loopet
             for hour, val in hourly.items():
                 h_rows.append({"zone": zone, "year": year, "hour": hour, "value_mwh": val})
             time.sleep(1)
