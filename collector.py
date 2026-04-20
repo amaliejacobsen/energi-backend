@@ -12,7 +12,7 @@ SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 supabase     = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 ENTSOE_TOKEN    = os.environ.get("ENTSOE_TOKEN", "138899c3-59b3-48ef-9dfd-03406794210d")
-ENTSOE_URL      = "https://web-api.tp.entsoe.eu/api"
+ENTSOE_URL      = "https://web-api.tp.entsoe.eu/api" 
 AGSI_KEY        = os.environ.get("AGSI_KEY", "12a5ed2eb1b9d3f2091abd2213758ec2")
 AGSI_URL        = "https://agsi.gie.eu/api"
 
