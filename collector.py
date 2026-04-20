@@ -28,16 +28,15 @@ if current_day >= 14:
     if current_month > 1:
         last_full_month = current_month - 1
     else:
-        last_full_month = 12  # Januar -> December sidste år
+        last_full_month = 12
 else:
     if current_month > 2:
         last_full_month = current_month - 2
     elif current_month == 2:
-        last_full_month = 12  # Februar -> December sidste år
-    else:  # Januar
-        last_full_month = 11  # Januar -> November sidste år
+        last_full_month = 12
+    else:
+        last_full_month = 11
 
-# Juster årstal hvis last_full_month er december men vi er i starten af året
 if last_full_month == 12 and current_month < 3:
     last_full_year = current_year - 1
 else:
@@ -80,7 +79,6 @@ def monthly_weighted(price_dict, prod_dict):
     }
 
 def is_too_recent(year, month):
-    """Returnerer True hvis år/måned er nyere end last_full_month/last_full_year."""
     if year > last_full_year:
         return True
     if year == last_full_year and month > last_full_month:
@@ -91,9 +89,7 @@ def fetch_all_records(dataset, area, start="2020-01-01"):
     all_records = []
     limit = 10000
     offset = 0
-    
     sort_column = "TimeDK" if dataset == "DayAheadPrices" else "HourDK"
-    
     while True:
         try:
             r = requests.get(f"https://api.energidataservice.dk/dataset/{dataset}", params={
@@ -104,30 +100,21 @@ def fetch_all_records(dataset, area, start="2020-01-01"):
                 "offset": offset,
                 "sort": f"{sort_column} asc",
             }, timeout=30)
-            
             r.raise_for_status()
-            
             if not r.text.strip():
                 break
-                
             data = r.json()
             records = data.get("records", [])
-            
             if not records:
                 break
-                
             all_records.extend(records)
-            
             if len(records) < limit:
                 break
-                
             offset += limit
             time.sleep(0.3)
-            
         except Exception as e:
             print(f"Fejl ved hentning af {dataset} ({area}): {e}")
             break
-            
     return all_records
 
 
@@ -139,14 +126,12 @@ def collect_dk_data():
     onshore_prod  = {area: {} for area in areas}
 
     for area in areas:
-        # Priser (Gamle/Historiske)
         for rec in fetch_all_records("Elspotprices", area):
             dt = datetime.fromisoformat(rec["HourDK"].replace('Z', '+00:00'))
             if is_too_recent(dt.year, dt.month):
                 continue
             hourly_prices[area][dt] = rec["SpotPriceDKK"]
 
-        # Priser (Nye/Aktuelle)
         for rec in fetch_all_records("DayAheadPrices", area):
             dt = datetime.fromisoformat(rec["TimeDK"].replace('Z', '+00:00'))
             if is_too_recent(dt.year, dt.month):
@@ -154,23 +139,18 @@ def collect_dk_data():
             if dt not in hourly_prices[area]:
                 hourly_prices[area][dt] = rec["DayAheadPriceDKK"]
 
-        # Produktion (Afregnede data)
         for rec in fetch_all_records("ProductionConsumptionSettlement", area):
             dt = datetime.fromisoformat(rec["HourDK"].replace('Z', '+00:00'))
             if is_too_recent(dt.year, dt.month):
                 continue
-
             solar_prod[area][dt] = (rec.get("SolarPowerLt10kW_MWh", 0) or 0) + \
                                    (rec.get("SolarPowerGe10Lt40kW_MWh", 0) or 0) + \
                                    (rec.get("SolarPowerGe40kW_MWh", 0) or 0)
-
             offshore_prod[area][dt] = (rec.get("OffshoreWindLt100MW_MWh", 0) or 0) + \
                                       (rec.get("OffshoreWindGe100MW_MWh", 0) or 0)
-
             onshore_prod[area][dt] = (rec.get("OnshoreWindLt50kW_MWh", 0) or 0) + \
                                      (rec.get("OnshoreWindGe50kW_MWh", 0) or 0)
 
-    # Gem i dk_prices
     for area in areas:
         avg_prices   = monthly_avg_prices(hourly_prices[area])
         avg_solar    = monthly_weighted(hourly_prices[area], solar_prod[area])
@@ -183,12 +163,10 @@ def collect_dk_data():
             y, m = map(int, month_str.split("-"))
             if is_too_recent(y, m):
                 continue
-
             spot  = avg_prices.get(month_str, 0)
             solar = avg_solar.get(month_str, 0)
             offsh = avg_offshore.get(month_str, 0)
             onsh  = avg_onshore.get(month_str, 0)
-
             rows.append({
                 "area": area, "month": month_str,
                 "spot_price": spot,
@@ -211,7 +189,6 @@ def collect_dk_data():
             monthly_by_year = defaultdict(lambda: defaultdict(float))
             for dt, prod in prod_dict.items():
                 monthly_by_year[dt.year][dt.month] += prod
-
             rows = []
             for year, months in monthly_by_year.items():
                 for month, val in months.items():
@@ -293,13 +270,12 @@ def collect_hydro_data():
                     if is_too_recent(year, month):
                         continue
                     rows.append({
-                        "country": country, 
+                        "country": country,
                         "zone": zone,
-                        "year": year, 
-                        "month": month, 
+                        "year": year,
+                        "month": month,
                         "value_mwh": val
                     })
-    
     if rows:
         supabase.table("hydro_production").upsert(rows, on_conflict="country,zone,year,month").execute()
         print(f"Hydro data gemt ({len(rows)} rækker).")
@@ -358,13 +334,31 @@ def collect_gas_data():
     if rows:
         supabase.table("gas_storage").upsert(rows, on_conflict="area,year,month").execute()
 
+# Installed capacity bruger individuelle budzoner for hvert land og summerer dem.
+# Dette sikrer at vi kun får kapacitet der faktisk tilhører landet,
+# og undgår fejl fra kontrol-område EIC'er der kan inkludere nabolande.
 CAPACITY_COUNTRIES = {
-    "Danmark":  "10Y1001A1001A65H",
-    "Norge":    "10YNO-0--------C",
-    "Sverige":  "10YSE-1--------K",
-    "Finland":  "10YFI-1--------U",
-    "Holland":  "10YNL----------L",
-    "Frankrig": "10YFR-RTE------C",
+    "Danmark":  [
+        "10YDK-1--------W",   # DK1
+        "10YDK-2--------M",   # DK2
+    ],
+    "Norge": [
+        "10YNO-1--------2",   # NO1 Østnorge
+        "10YNO-2--------T",   # NO2 Sydnorge
+        "10YNO-3--------J",   # NO3 Midt-Norge
+        "10YNO-4--------9",   # NO4 Nordnorge
+        "10Y1001A1001A48H",   # NO5 Vestnorge
+    ],
+    "Sverige": [
+        "10Y1001A1001A44P",   # SE1
+        "10Y1001A1001A45N",   # SE2
+        "10Y1001A1001A46L",   # SE3
+        "10Y1001A1001A47J",   # SE4
+    ],
+    "Finland":  ["10YFI-1--------U"],   # FI (én budzone)
+    "Holland":  ["10YNL----------L"],   # NL (én budzone)
+    "Frankrig": ["10YFR-RTE------C"],   # FR (én budzone)
+    "Tyskland": ["10Y1001A1001A83F"],   # DE-LU (én budzone)
 }
 
 PSR_NAMES = {
@@ -377,52 +371,72 @@ PSR_NAMES = {
     "B18": "Waste", "B19": "Other", "B20": "Marine", "B21": "Energy storage",
 }
 
+def fetch_capacity_for_eic(eic, year):
+    """Henter installed capacity for ét EIC og returnerer {psr: max_mw}."""
+    params = {
+        "documentType": "A68", "processType": "A33",
+        "in_Domain": eic,
+        "periodStart": f"{year}01010000",
+        "periodEnd":   f"{year}12312300",
+        "securityToken": ENTSOE_TOKEN,
+    }
+    for attempt in range(3):
+        r = requests.get(ENTSOE_URL, params=params)
+        if r.status_code == 200:
+            break
+        elif r.status_code in (503, 429):
+            time.sleep(10 * (attempt + 1))
+        else:
+            return {}
+    else:
+        return {}
+
+    if "No matching data found" in r.text:
+        return {}
+    try:
+        root = ET.fromstring(r.text)
+    except ET.ParseError:
+        return {}
+
+    ns = {"ns": "urn:iec62325.351:tc57wg16:451-6:generationloaddocument:3:0"}
+    seen = {}
+    for ts in root.findall(".//ns:TimeSeries", ns):
+        psr_el = ts.find(".//ns:psrType", ns)
+        if psr_el is None:
+            continue
+        psr = psr_el.text
+        for period in ts.findall("ns:Period", ns):
+            for point in period.findall("ns:Point", ns):
+                qty_el = point.find("ns:quantity", ns)
+                if qty_el is None:
+                    continue
+                try:
+                    qty = float(qty_el.text)
+                except ValueError:
+                    continue
+                if qty > seen.get(psr, 0):
+                    seen[psr] = qty
+    return seen
+
 def collect_capacity_data():
     print("Henter installed capacity...")
     rows = []
-    for country, eic in CAPACITY_COUNTRIES.items():
+    for country, eic_list in CAPACITY_COUNTRIES.items():
         for year in range(2020, current_year + 1):
-            params = {
-                "documentType": "A68", "processType": "A33",
-                "in_Domain": eic,
-                "periodStart": f"{year}01010000",
-                "periodEnd":   f"{year}12312300",
-                "securityToken": ENTSOE_TOKEN,
-            }
-            for attempt in range(3):
-                r = requests.get(ENTSOE_URL, params=params)
-                if r.status_code == 200: break
-                elif r.status_code in (503, 429): time.sleep(10 * (attempt + 1))
-                else: break
-            else: continue
+            print(f"  {country} {year}...")
+            combined = defaultdict(float)
+            for eic in eic_list:
+                zone_data = fetch_capacity_for_eic(eic, year)
+                for psr, mw in zone_data.items():
+                    combined[psr] += mw
+                time.sleep(1)
 
-            if "No matching data found" in r.text: continue
-            try:
-                root = ET.fromstring(r.text)
-            except ET.ParseError: continue
-
-            ns = {"ns": "urn:iec62325.351:tc57wg16:451-6:generationloaddocument:3:0"}
-            seen = {}
-            for ts in root.findall(".//ns:TimeSeries", ns):
-                psr_el = ts.find(".//ns:psrType", ns)
-                if psr_el is None: continue
-                psr = psr_el.text
-                for period in ts.findall("ns:Period", ns):
-                    for point in period.findall("ns:Point", ns):
-                        qty_el = point.find("ns:quantity", ns)
-                        if qty_el is None: continue
-                        try:
-                            qty = float(qty_el.text)
-                        except ValueError: continue
-                        if qty > seen.get(psr, 0):
-                            seen[psr] = qty
-            for psr, mw in seen.items():
+            for psr, mw in combined.items():
                 rows.append({
                     "country": country, "psr_type": psr,
                     "psr_name": PSR_NAMES.get(psr, psr),
                     "year": year, "value_mw": mw
                 })
-            time.sleep(1)
 
     if rows:
         supabase.table("installed_capacity").upsert(rows, on_conflict="country,psr_type,year").execute()
@@ -445,15 +459,21 @@ def fetch_consumption_monthly(eic_code, year, token):
     }
     for attempt in range(3):
         r = requests.get(ENTSOE_URL, params=params, timeout=60)
-        if r.status_code == 200: break
-        elif r.status_code in (503, 429): time.sleep(15 * (attempt + 1))
-        else: return {}, {}
-    else: return {}, {}
+        if r.status_code == 200:
+            break
+        elif r.status_code in (503, 429):
+            time.sleep(15 * (attempt + 1))
+        else:
+            return {}, {}
+    else:
+        return {}, {}
 
-    if "No matching data found" in r.text: return {}, {}
+    if "No matching data found" in r.text:
+        return {}, {}
     try:
         root = ET.fromstring(r.text)
-    except ET.ParseError: return {}, {}
+    except ET.ParseError:
+        return {}, {}
 
     ns_uri = root.tag.split("}")[0][1:] if root.tag.startswith("{") else ""
     prefix = f"{{{ns_uri}}}" if ns_uri else ""
@@ -462,21 +482,22 @@ def fetch_consumption_monthly(eic_code, year, token):
         for period in ts.findall(f"{prefix}Period"):
             start_el = period.find(f"{prefix}timeInterval/{prefix}start")
             res_el   = period.find(f"{prefix}resolution")
-            if start_el is None or res_el is None: continue
+            if start_el is None or res_el is None:
+                continue
             start_dt   = datetime.strptime(start_el.text, "%Y-%m-%dT%H:%MZ")
             resolution = res_el.text
             for point in period.findall(f"{prefix}Point"):
                 pos_el = point.find(f"{prefix}position")
                 qty_el = point.find(f"{prefix}quantity")
-                if pos_el is None or qty_el is None: continue
+                if pos_el is None or qty_el is None:
+                    continue
                 try:
                     pos = int(pos_el.text)
                     qty = float(qty_el.text)
-                except: continue
-                
+                except:
+                    continue
                 offset = (pos - 1) * (15 if resolution == "PT15M" else 60)
                 dt = start_dt + timedelta(minutes=offset)
-                
                 monthly[dt.month].append(qty)
                 hourly[dt.hour].append(qty)
 
@@ -492,17 +513,18 @@ def collect_consumption_data():
         for year in fetch_years:
             print(f"  {zone} {year}...")
             monthly, hourly = fetch_consumption_monthly(eic, year, ENTSOE_TOKEN)
-
             for month, val in monthly.items():
-                if is_too_recent(year, month): continue
+                if is_too_recent(year, month):
+                    continue
                 m_rows.append({"zone": zone, "year": year, "month": month, "value_mwh": val})
-            
             for hour, val in hourly.items():
                 h_rows.append({"zone": zone, "year": year, "hour": hour, "value_mwh": val})
             time.sleep(1)
 
-    if m_rows: supabase.table("consumption").upsert(m_rows, on_conflict="zone,year,month").execute()
-    if h_rows: supabase.table("consumption_hourly").upsert(h_rows, on_conflict="zone,year,hour").execute()
+    if m_rows:
+        supabase.table("consumption").upsert(m_rows, on_conflict="zone,year,month").execute()
+    if h_rows:
+        supabase.table("consumption_hourly").upsert(h_rows, on_conflict="zone,year,hour").execute()
     print("Forbrugsdata gemt.")
 
 def collect_all():
