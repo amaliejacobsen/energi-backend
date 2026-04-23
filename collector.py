@@ -339,7 +339,7 @@ PSR_NAMES = {
     "B10": "Hydro Run-of-river and pondage", "B11": "Hydro Water Reservoir",
     "B12": "Wind Offshore", "B13": "Wind Onshore", "B14": "Solar",
     "B15": "Geothermal", "B16": "Nuclear", "B17": "Other renewable",
-    "B18": "Waste", "B19": "Other", "B20": "Marine", "B21": "Energy storage",
+    "B18": "Waste", "B19": "Other", "B20": "Marine", "B21": "Energy storage", "B25": "Energy storage (B25)",
 }
 
 CAPACITY_COUNTRIES = {
@@ -349,25 +349,24 @@ CAPACITY_COUNTRIES = {
         "psr_map": {"B16": "B14", "B18": "B12", "B19": "B13", "B11": "B10"},
     },
     "Norge": {
-    "eics": [
-        "10YNO-1--------2",
-        "10YNO-2--------T",
-        "10YNO-3--------J",
-        "10YNO-4--------9",
-        "10Y1001A1001A48H",
-    ],
-    "allowed_psr": {"B01", "B04", "B10", "B11", "B12", "B15", "B16", "B17", "B18", "B19", "B20"},
-    "psr_map": {
-        "B10": "B09",  # Hydro Run-of-river -> Hydro Pumped Storage
-        "B11": "B10",  # Hydro Water Reservoir -> Hydro Run-of-river
-        "B12": "B11",  # Wind Offshore -> Hydro Water Reservoir
-        "B15": "B17",  # Geothermal -> Other renewable
-        "B16": "B14",  # Nuclear -> Solar
-        "B17": "B18",  # Other renewable -> Waste
-        "B18": "B12",  # Waste -> Wind Offshore
-        "B19": "B13",  # Other -> Wind Onshore
-        "B20": "B19",  # Marine -> Other
-    },
+        "eics": [
+            "10YNO-1--------2",
+            "10YNO-2--------T",
+            "10YNO-3--------J",
+            "10YNO-4--------9",
+            "10Y1001A1001A48H",
+        ],
+        "allowed_psr": {"B01", "B04", "B10", "B11", "B12", "B15", "B16", "B17", "B18", "B19", "B20"},
+        "psr_map": {
+            "B11": "B09",  # -> Hydro Pumped Storage
+            "B12": "B11",  # -> Hydro Water Reservoir
+            "B15": "B17",  # -> Other renewable
+            "B16": "B14",  # -> Solar
+            "B17": "B18",  # -> Waste
+            "B18": "B12",  # -> Wind Offshore
+            "B19": "B13",  # -> Wind Onshore
+            "B20": "B19",  # -> Other
+        },
     },
     "Sverige": {
         "eics": ["10YSE-1--------K"],
@@ -376,9 +375,19 @@ CAPACITY_COUNTRIES = {
     },
     "Finland": {
         "eics": ["10YFI-1--------U"],
-        "allowed_psr": {"B01", "B04", "B05", "B06", "B08", "B10", "B13", "B14", "B16", "B17", "B18", "B19", "B21"},
-        "psr_map": {},
+        "allowed_psr": {"B01", "B04", "B05", "B06", "B08", "B11", "B14", "B15", "B16", "B17", "B19", "B20", "B25"},
+        "psr_map": {
+            "B11": "B10",  # -> Hydro Run-of-river
+            "B14": "B16",  # -> Nuclear
+            "B15": "B17",  # -> Other renewable
+            "B16": "B14",  # -> Solar (B16=1512 men screenshot Solar=1512)
+            "B17": "B18",  # -> Waste
+            "B19": "B13",  # -> Wind Onshore
+            "B20": "B19",  # -> Other
+            "B25": "B21",  # -> Energy storage
+        },
     },
+    
     "Holland": {
         "eics": ["10YNL----------L"],
         "allowed_psr": {"B01", "B04", "B05", "B10", "B12", "B13", "B14", "B16", "B18", "B19"},
@@ -602,20 +611,8 @@ def test_capacity_raw(eic, year=2026):
 
 if __name__ == "__main__":
     for name, eic in [
-        ("SE kontrol-område", "10YSE-1--------K"),
-        ("SE1", "10Y1001A1001A44P"),
-        ("SE2", "10Y1001A1001A45N"),
-        ("SE3", "10Y1001A1001A46L"),
-        ("SE4", "10Y1001A1001A47J"),
-        ("FI", "10YFI-1--------U"),
-        ("FR", "10YFR-RTE------C"),
-        ("DK kontrol-område", "10Y1001A1001A65H"),
-        ("DK1", "10YDK-1--------W"),
-        ("DK2", "10YDK-2--------M"),
+        ("NL", "10YNL----------L"),
     ]:
-        print(f"\n=== {name} ===")
-        test_capacity_raw(eic)
-        time.sleep(1)
         print(f"\n=== {name} ===")
         test_capacity_raw(eic)
         time.sleep(1)
