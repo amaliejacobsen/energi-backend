@@ -438,6 +438,8 @@ def collect_capacity_data():
     for country, config in CAPACITY_COUNTRIES.items():
         if country != "Frankrig":
             continue
+        eic         = config["eic"]
+        allowed_psr = config["allowed_psr"]
         for year in [2024]:
             print(f"  {country} {year}...")
             data = fetch_capacity_for_country(eic, year, allowed_psr)
