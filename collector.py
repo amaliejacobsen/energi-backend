@@ -347,15 +347,16 @@ CAPACITY_COUNTRIES = {
     
     "Sverige": {
     "eic": "10YSE-1--------K",
-    "allowed_psr": {"B01", "B09", "B10", "B11", "B13", "B14", "B16", "B17", "B18", "B19", "B21"},
+    "allowed_psr": set(),  # Ingen data tilgængeligt fra ENTSOE
     },
     "Finland": {
     "eic": "10YFI-1--------U",
     "allowed_psr": {"B01", "B04", "B05", "B06", "B08", "B10", "B13", "B14", "B16", "B17", "B18", "B19", "B21"},
     },
+   
     "Holland": {
     "eic": "10YNL----------L",
-    "allowed_psr": {"B01", "B04", "B05", "B06", "B10", "B12", "B13", "B14", "B16", "B17", "B18", "B19", "B21"},
+    "allowed_psr": {"B01", "B04", "B05", "B10", "B12", "B13", "B14", "B16", "B18", "B19"},
     },
     
     "Frankrig": {
@@ -365,7 +366,7 @@ CAPACITY_COUNTRIES = {
     
     "Tyskland": {
     "eic": "10Y1001A1001A83F",
-    "allowed_psr": {"B01", "B02", "B03", "B04", "B05", "B06", "B09", "B10", "B11", "B12", "B13", "B14", "B15", "B17", "B18", "B19", "B21"},
+    "allowed_psr": {"B01", "B02", "B03", "B04", "B05", "B06", "B09", "B10", "B11", "B12", "B13", "B14", "B15", "B17", "B18", "B19"},
     },
 }
 
@@ -444,11 +445,9 @@ def collect_capacity_data():
     print("Henter installed capacity...")
     rows = []
     for country, config in CAPACITY_COUNTRIES.items():
-        if country != "Frankrig":
-            continue
         eic         = config["eic"]
         allowed_psr = config["allowed_psr"]
-        for year in [2024]:
+        for year in range(2020, current_year + 1):
             print(f"  {country} {year}...")
             data = fetch_capacity_for_country(eic, year, allowed_psr)
             if not data:
@@ -552,7 +551,11 @@ def collect_consumption_data():
 
 def collect_all():
     print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
+    collect_dk_data()
+    collect_gas_data()
+    collect_hydro_data()
     collect_capacity_data()
+    collect_consumption_data()
     print(f"\nSlut: {datetime.now()}")
 
 if __name__ == "__main__":
