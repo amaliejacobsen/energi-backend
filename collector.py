@@ -430,6 +430,7 @@ def fetch_capacity_for_country(eic, year, allowed_psr):
                     continue
                 if qty > seen.get(psr, 0):
                     seen[psr] = qty
+    print(f"    PSR data: {seen}")
     return seen
 
 def collect_capacity_data():
