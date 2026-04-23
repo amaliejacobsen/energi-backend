@@ -435,11 +435,18 @@ def fetch_capacity_for_country(eic, year, allowed_psr):
                     continue
                 if qty > seen.get(psr, 0):
                     seen[psr] = qty
-    # ENTSOE bytter B14 og B16 for Frankrig
-    if "10YFR-RTE------C" in eic and "B14" in seen and "B16" in seen:
-        seen["B14"], seen["B16"] = seen["B16"], seen["B14"]
-    print(f"    PSR data efter swap: {seen}")
-    return seen
+    # ENTSOE forskyder PSR-koder med én position i XML
+    PSR_SHIFT = {
+        "B09": "B10", "B10": "B11", "B11": "B12", "B12": "B13",
+        "B13": "B14", "B14": "B15", "B15": "B16", "B16": "B17",
+        "B17": "B18", "B18": "B19", "B19": "B20", "B20": "B21",
+    }
+    corrected = {}
+    for psr, mw in seen.items():
+        correct_psr = PSR_SHIFT.get(psr, psr)
+        corrected[correct_psr] = mw
+    print(f"    PSR data korrigeret: {corrected}")
+    return corrected
 
 def collect_capacity_data():
     print("Henter installed capacity...")
