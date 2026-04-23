@@ -336,53 +336,44 @@ def collect_gas_data():
 # Vi bruger kontrol-område EIC'er og filtrerer PSR-typer der ikke findes i landet.
 CAPACITY_COUNTRIES = {
     "Danmark": {
-    "eic": "10Y1001A1001A65H",
-    "allowed_psr": {"B01", "B04", "B05", "B06", "B10", "B12", "B13", "B14"},
+        "eics": ["10YDK-1--------W", "10YDK-2--------M"],
+        "allowed_psr": {"B01", "B04", "B05", "B06", "B10", "B12", "B13", "B14"},
+        "psr_map": {},
     },
-    
     "Norge": {
-    "eic": "10YNO-0--------C",
-    "allowed_psr": {"B01", "B04", "B09", "B10", "B11", "B12", "B13", "B14", "B17", "B18"},
+        "eics": ["10YNO-0--------C"],
+        "allowed_psr": {"B01", "B04", "B09", "B10", "B11", "B12", "B13", "B14", "B17", "B18"},
+        "psr_map": {},
     },
-    
     "Sverige": {
-    "eic": "10YSE-1--------K",
-    "allowed_psr": set(),  # Ingen data tilgængeligt fra ENTSOE
+        "eics": ["10YSE-1--------K"],
+        "allowed_psr": set(),
+        "psr_map": {},
     },
     "Finland": {
-    "eic": "10YFI-1--------U",
-    "allowed_psr": {"B01", "B04", "B05", "B06", "B08", "B10", "B13", "B14", "B16", "B17", "B18", "B19", "B21"},
+        "eics": ["10YFI-1--------U"],
+        "allowed_psr": {"B01", "B04", "B05", "B06", "B08", "B10", "B13", "B14", "B16", "B17", "B18", "B19", "B21"},
+        "psr_map": {},
     },
-   
     "Holland": {
-    "eic": "10YNL----------L",
-    "allowed_psr": {"B01", "B04", "B05", "B10", "B12", "B13", "B14", "B16", "B18", "B19"},
+        "eics": ["10YNL----------L"],
+        "allowed_psr": {"B01", "B04", "B05", "B10", "B12", "B13", "B14", "B16", "B18", "B19"},
+        "psr_map": {"B14": "B16", "B16": "B14", "B18": "B12", "B19": "B13"},
     },
-    
     "Frankrig": {
-    "eic": "10YFR-RTE------C",
-    "allowed_psr": {"B01", "B04", "B05", "B06", "B09", "B10", "B11", "B12", "B13", "B14", "B15", "B16", "B18", "B19", "B20"},
+        "eics": ["10YFR-RTE------C"],
+        "allowed_psr": {"B01", "B04", "B05", "B06", "B09", "B10", "B11", "B12", "B13", "B14", "B15", "B16", "B18", "B19", "B20"},
+        "psr_map": {"B14": "B16", "B16": "B14"},
     },
-    
     "Tyskland": {
-    "eic": "10Y1001A1001A83F",
-    "allowed_psr": {"B01", "B02", "B03", "B04", "B05", "B06", "B09", "B10", "B11", "B12", "B13", "B14", "B15", "B17", "B18", "B19"},
+        "eics": ["10Y1001A1001A83F"],
+        "allowed_psr": {"B01", "B02", "B03", "B04", "B05", "B06", "B09", "B10", "B11", "B12", "B13", "B14", "B15", "B17", "B18", "B19"},
+        "psr_map": {},
     },
 }
 
-PSR_NAMES = {
-    "B01": "Biomass", "B02": "Fossil Brown coal/Lignite", "B03": "Fossil Coal-derived gas",
-    "B04": "Fossil Gas", "B05": "Fossil Hard coal", "B06": "Fossil Oil",
-    "B07": "Fossil Oil shale", "B08": "Fossil Peat", "B09": "Hydro Pumped Storage",
-    "B10": "Hydro Run-of-river and pondage", "B11": "Hydro Water Reservoir",
-    "B12": "Wind Offshore", "B13": "Wind Onshore", "B14": "Solar",
-    "B15": "Geothermal", "B16": "Nuclear", "B17": "Other renewable",
-    "B18": "Waste", "B19": "Other", "B20": "Marine", "B21": "Energy storage",
-}
-
-def fetch_capacity_for_country(eic, year, allowed_psr):
-    """Henter installed capacity for ét kontrol-område og returnerer {psr: max_mw},
-    filtreret til kun de PSR-typer der er relevante for landet."""
+def fetch_capacity_for_eic(eic, year, allowed_psr, psr_map):
+    """Henter installed capacity for ét EIC og returnerer {psr: max_mw}."""
     params = {
         "documentType": "A68", "processType": "A33",
         "in_Domain": eic,
@@ -410,10 +401,6 @@ def fetch_capacity_for_country(eic, year, allowed_psr):
     except ET.ParseError:
         return {}
 
-    import re
-    matches = re.findall(r'<psrType>(.*?)</psrType>.*?<quantity>(.*?)</quantity>', r.text, re.DOTALL)
-    print(f"    Rå PSR matches: {matches[:10]}")
-
     ns = {"ns": "urn:iec62325.351:tc57wg16:451-6:generationloaddocument:3:0"}
     seen = {}
     for ts in root.findall(".//ns:TimeSeries", ns):
@@ -421,7 +408,6 @@ def fetch_capacity_for_country(eic, year, allowed_psr):
         if psr_el is None:
             continue
         psr = psr_el.text
-        # Filtrer PSR-typer der ikke hører til landet
         if psr not in allowed_psr:
             continue
         for period in ts.findall("ns:Period", ns):
@@ -435,37 +421,38 @@ def fetch_capacity_for_country(eic, year, allowed_psr):
                     continue
                 if qty > seen.get(psr, 0):
                     seen[psr] = qty
-    # ENTSOE forskyder PSR-koder med én position i XML
-    PSR_SHIFT = {
-        "B09": "B10", "B10": "B11", "B11": "B12", "B12": "B13",
-        "B13": "B14", "B14": "B15", "B15": "B16", "B16": "B17",
-        "B17": "B18", "B18": "B19", "B19": "B20", "B20": "B21",
-    }
+
+    # Anvend PSR korrektion
     corrected = {}
     for psr, mw in seen.items():
-        correct_psr = PSR_SHIFT.get(psr, psr)
-        corrected[correct_psr] = mw
-    print(f"    PSR data korrigeret: {corrected}")
+        correct_psr = psr_map.get(psr, psr)
+        corrected[correct_psr] = corrected.get(correct_psr, 0) + mw
+
     return corrected
 
 def collect_capacity_data():
     print("Henter installed capacity...")
     rows = []
     for country, config in CAPACITY_COUNTRIES.items():
-        eic         = config["eic"]
+        eics        = config["eics"]
         allowed_psr = config["allowed_psr"]
-        for year in [2024]:
+        psr_map     = config["psr_map"]
+        for year in range(2020, current_year + 1):
             print(f"  {country} {year}...")
-            data = fetch_capacity_for_country(eic, year, allowed_psr)
-            if not data:
+            combined = defaultdict(float)
+            for eic in eics:
+                data = fetch_capacity_for_eic(eic, year, allowed_psr, psr_map)
+                for psr, mw in data.items():
+                    combined[psr] += mw
+                time.sleep(1)
+            if not combined:
                 print(f"    Ingen data for {country} {year}")
-            for psr, mw in data.items():
+            for psr, mw in combined.items():
                 rows.append({
                     "country": country, "psr_type": psr,
                     "psr_name": PSR_NAMES.get(psr, psr),
                     "year": year, "value_mw": mw
                 })
-            time.sleep(1)
 
     if rows:
         supabase.table("installed_capacity").upsert(rows, on_conflict="country,psr_type,year").execute()
