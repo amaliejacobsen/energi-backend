@@ -639,6 +639,15 @@ def test_capacity_raw(eic, year=2026):
     for psr, mw in sorted(seen.items()):
         print(f"  {psr} ({PSR_NAMES.get(psr, '?')}): {mw} MW")
 
+if __name__ == "__main__":
+    collect_all()
+
+    if m_rows:
+        supabase.table("consumption").upsert(m_rows, on_conflict="zone,year,month").execute()
+    if h_rows:
+        supabase.table("consumption_hourly").upsert(h_rows, on_conflict="zone,year,hour").execute()
+    print("Forbrugsdata gemt.")
+
 def collect_all():
     print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
     collect_dk_data()
