@@ -434,10 +434,10 @@ def fetch_capacity_for_country(eic, year, allowed_psr):
                     continue
                 if qty > seen.get(psr, 0):
                     seen[psr] = qty
-    print(f"    PSR data: {seen}")
     # ENTSOE bytter B14 og B16 for Frankrig
     if "10YFR-RTE------C" in eic and "B14" in seen and "B16" in seen:
         seen["B14"], seen["B16"] = seen["B16"], seen["B14"]
+    print(f"    PSR data efter swap: {seen}")
     return seen
 
 def collect_capacity_data():
