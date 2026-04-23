@@ -409,6 +409,10 @@ def fetch_capacity_for_country(eic, year, allowed_psr):
     except ET.ParseError:
         return {}
 
+    import re
+    matches = re.findall(r'<psrType>(.*?)</psrType>.*?<quantity>(.*?)</quantity>', r.text, re.DOTALL)
+    print(f"    Rå PSR matches: {matches[:10]}")
+
     ns = {"ns": "urn:iec62325.351:tc57wg16:451-6:generationloaddocument:3:0"}
     seen = {}
     for ts in root.findall(".//ns:TimeSeries", ns):
