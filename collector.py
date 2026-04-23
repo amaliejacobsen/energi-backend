@@ -436,9 +436,9 @@ def collect_capacity_data():
     print("Henter installed capacity...")
     rows = []
     for country, config in CAPACITY_COUNTRIES.items():
-        eic         = config["eic"]
-        allowed_psr = config["allowed_psr"]
-        for year in range(2020, current_year + 1):
+        if country != "Frankrig":
+            continue
+        for year in [2024]:
             print(f"  {country} {year}...")
             data = fetch_capacity_for_country(eic, year, allowed_psr)
             if not data:
@@ -542,11 +542,7 @@ def collect_consumption_data():
 
 def collect_all():
     print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
-    collect_dk_data()
-    collect_gas_data()
-    collect_hydro_data()
     collect_capacity_data()
-    collect_consumption_data()
     print(f"\nSlut: {datetime.now()}")
 
 if __name__ == "__main__":
