@@ -379,15 +379,14 @@ CAPACITY_COUNTRIES = {
         "psr_map": {
             "B11": "B10",  # -> Hydro Run-of-river
             "B14": "B16",  # -> Nuclear
-            "B15": "B17",  # -> Other renewable
-            "B16": "B14",  # -> Solar (B16=1512 men screenshot Solar=1512)
+            "B15": "B12",  # -> Wind Offshore
+            "B16": "B14",  # -> Solar
             "B17": "B18",  # -> Waste
             "B19": "B13",  # -> Wind Onshore
             "B20": "B19",  # -> Other
             "B25": "B21",  # -> Energy storage
         },
     },
-    
     "Holland": {
         "eics": ["10YNL----------L"],
         "allowed_psr": {"B01", "B04", "B05", "B11", "B14", "B16", "B17", "B18", "B19", "B20"},
@@ -403,13 +402,36 @@ CAPACITY_COUNTRIES = {
     },
     "Frankrig": {
         "eics": ["10YFR-RTE------C"],
-        "allowed_psr": {"B01", "B04", "B05", "B06", "B09", "B10", "B11", "B12", "B13", "B14", "B15", "B16", "B18", "B19", "B20"},
-        "psr_map": {"B14": "B16", "B16": "B14"},
+        "allowed_psr": {"B01", "B04", "B05", "B06", "B09", "B10", "B11", "B12", "B13", "B14", "B16", "B17", "B18", "B19", "B20"},
+        "psr_map": {
+            "B09": "B15",  # -> Geothermal
+            "B10": "B09",  # -> Hydro Pumped Storage
+            "B11": "B10",  # -> Hydro Run-of-river
+            "B12": "B11",  # -> Hydro Water Reservoir
+            "B13": "B20",  # -> Marine
+            "B14": "B16",  # -> Nuclear
+            "B16": "B14",  # -> Solar
+            "B17": "B18",  # -> Waste
+            "B18": "B12",  # -> Wind Offshore
+            "B19": "B13",  # -> Wind Onshore
+            "B20": "B19",  # -> Other
+        },
     },
     "Tyskland": {
         "eics": ["10Y1001A1001A83F"],
-        "allowed_psr": {"B01", "B02", "B03", "B04", "B05", "B06", "B09", "B10", "B11", "B12", "B13", "B14", "B15", "B17", "B18", "B19"},
-        "psr_map": {},
+        "allowed_psr": {"B01", "B02", "B03", "B04", "B05", "B06", "B09", "B10", "B11", "B12", "B15", "B16", "B17", "B18", "B19", "B20", "B25"},
+        "psr_map": {
+            "B09": "B15",  # -> Geothermal
+            "B10": "B09",  # -> Hydro Pumped Storage
+            "B11": "B10",  # -> Hydro Run-of-river
+            "B12": "B11",  # -> Hydro Water Reservoir
+            "B16": "B14",  # -> Solar
+            "B17": "B18",  # -> Waste
+            "B18": "B12",  # -> Wind Offshore
+            "B19": "B13",  # -> Wind Onshore
+            "B20": "B19",  # -> Other
+            "B25": "B21",  # -> Energy storage
+        },
     },
 }
 
