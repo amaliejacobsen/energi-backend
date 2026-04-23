@@ -639,11 +639,14 @@ def test_capacity_raw(eic, year=2026):
     for psr, mw in sorted(seen.items()):
         print(f"  {psr} ({PSR_NAMES.get(psr, '?')}): {mw} MW")
 
+def collect_all():
+    print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
+    collect_dk_data()
+    collect_gas_data()
+    collect_hydro_data()
+    collect_capacity_data()
+    collect_consumption_data()
+    print(f"\nSlut: {datetime.now()}")
+
 if __name__ == "__main__":
-    for name, eic in [
-        ("FR", "10YFR-RTE------C"),
-        ("DE", "10Y1001A1001A83F"),
-    ]:
-        print(f"\n=== {name} ===")
-        test_capacity_raw(eic)
-        time.sleep(1)
+    collect_all()
