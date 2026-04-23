@@ -549,14 +549,51 @@ def collect_consumption_data():
         supabase.table("consumption_hourly").upsert(h_rows, on_conflict="zone,year,hour").execute()
     print("Forbrugsdata gemt.")
 
-def collect_all():
-    print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
-    collect_dk_data()
-    collect_gas_data()
-    collect_hydro_data()
-    collect_capacity_data()
-    collect_consumption_data()
-    print(f"\nSlut: {datetime.now()}")
+def test_capacity_raw(eic, year=2026):
+    params = {
+        "documentType": "A68", "processType": "A33",
+        "in_Domain": eic,
+        "periodStart": f"{year}01010000",
+        "periodEnd":   f"{year}12312300",
+        "securityToken": ENTSOE_TOKEN,
+    }
+    r = requests.get(ENTSOE_URL, params=params, timeout=30)
+    print(f"Status: {r.status_code} | EIC: {eic}")
+    if r.status_code != 200 or "No matching data found" in r.text:
+        print("  Ingen data")
+        return
+    root = ET.fromstring(r.text)
+    ns = {"ns": "urn:iec62325.351:tc57wg16:451-6:generationloaddocument:3:0"}
+    seen = {}
+    for ts in root.findall(".//ns:TimeSeries", ns):
+        psr_el = ts.find(".//ns:psrType", ns)
+        if psr_el is None:
+            continue
+        psr = psr_el.text
+        for period in ts.findall("ns:Period", ns):
+            for point in period.findall("ns:Point", ns):
+                qty_el = point.find("ns:quantity", ns)
+                if qty_el is None:
+                    continue
+                try:
+                    qty = float(qty_el.text)
+                except ValueError:
+                    continue
+                if qty > seen.get(psr, 0):
+                    seen[psr] = qty
+    for psr, mw in sorted(seen.items()):
+        print(f"  {psr} ({PSR_NAMES.get(psr, '?')}): {mw} MW")
 
 if __name__ == "__main__":
-    collect_all()
+    # Test norske zoner
+    for name, eic in [
+        ("NO kontrol-område", "10YNO-0--------C"),
+        ("NO1", "10YNO-1--------2"),
+        ("NO2", "10YNO-2--------T"),
+        ("NO3", "10YNO-3--------J"),
+        ("NO4", "10YNO-4--------9"),
+        ("NO5", "10Y1001A1001A48H"),
+    ]:
+        print(f"\n=== {name} ===")
+        test_capacity_raw(eic)
+        time.sleep(1)
