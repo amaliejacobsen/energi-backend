@@ -332,13 +332,21 @@ def collect_gas_data():
     if rows:
         supabase.table("gas_storage").upsert(rows, on_conflict="area,year,month").execute()
 
-# ENTSO-E A68 installed capacity publiceres per kontrol-område, ikke per budzone.
-# Vi bruger kontrol-område EIC'er og filtrerer PSR-typer der ikke findes i landet.
+PSR_NAMES = {
+    "B01": "Biomass", "B02": "Fossil Brown coal/Lignite", "B03": "Fossil Coal-derived gas",
+    "B04": "Fossil Gas", "B05": "Fossil Hard coal", "B06": "Fossil Oil",
+    "B07": "Fossil Oil shale", "B08": "Fossil Peat", "B09": "Hydro Pumped Storage",
+    "B10": "Hydro Run-of-river and pondage", "B11": "Hydro Water Reservoir",
+    "B12": "Wind Offshore", "B13": "Wind Onshore", "B14": "Solar",
+    "B15": "Geothermal", "B16": "Nuclear", "B17": "Other renewable",
+    "B18": "Waste", "B19": "Other", "B20": "Marine", "B21": "Energy storage",
+}
+
 CAPACITY_COUNTRIES = {
     "Danmark": {
-    "eics": ["10YDK-1--------W", "10YDK-2--------M"],
-    "allowed_psr": None,  # Midlertidig – vis alle
-    "psr_map": {},
+        "eics": ["10YDK-1--------W", "10YDK-2--------M"],
+        "allowed_psr": None,
+        "psr_map": {"B16": "B14", "B18": "B12", "B19": "B13", "B11": "B10"},
     },
     "Norge": {
         "eics": ["10YNO-0--------C"],
@@ -373,7 +381,6 @@ CAPACITY_COUNTRIES = {
 }
 
 def fetch_capacity_for_eic(eic, year, allowed_psr, psr_map):
-    """Henter installed capacity for ét EIC og returnerer {psr: max_mw}."""
     params = {
         "documentType": "A68", "processType": "A33",
         "in_Domain": eic,
@@ -408,7 +415,7 @@ def fetch_capacity_for_eic(eic, year, allowed_psr, psr_map):
         if psr_el is None:
             continue
         psr = psr_el.text
-        if allowed_psr and psr not in allowed_psr:
+        if allowed_psr is not None and psr not in allowed_psr:
             continue
         for period in ts.findall("ns:Period", ns):
             for point in period.findall("ns:Point", ns):
@@ -422,7 +429,6 @@ def fetch_capacity_for_eic(eic, year, allowed_psr, psr_map):
                 if qty > seen.get(psr, 0):
                     seen[psr] = qty
 
-    # Anvend PSR korrektion
     corrected = {}
     for psr, mw in seen.items():
         correct_psr = psr_map.get(psr, psr)
@@ -434,17 +440,14 @@ def collect_capacity_data():
     print("Henter installed capacity...")
     rows = []
     for country, config in CAPACITY_COUNTRIES.items():
-        if country != "Danmark":
-            continue
         eics        = config["eics"]
         allowed_psr = config["allowed_psr"]
         psr_map     = config["psr_map"]
-        for year in [2026]:
+        for year in range(2020, current_year + 1):
             print(f"  {country} {year}...")
             combined = defaultdict(float)
             for eic in eics:
                 data = fetch_capacity_for_eic(eic, year, allowed_psr, psr_map)
-                print(f"    {eic}: {data}")
                 for psr, mw in data.items():
                     combined[psr] += mw
                 time.sleep(1)
@@ -548,7 +551,11 @@ def collect_consumption_data():
 
 def collect_all():
     print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
+    collect_dk_data()
+    collect_gas_data()
+    collect_hydro_data()
     collect_capacity_data()
+    collect_consumption_data()
     print(f"\nSlut: {datetime.now()}")
 
 if __name__ == "__main__":
