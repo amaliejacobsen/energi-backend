@@ -11,7 +11,7 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 supabase     = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-ENTSOE_TOKEN    = os.environ.get("ENTSOE_TOKEN", "1f89b45e-3d9e-4b2e-9cad-e24a16a009f4")
+ENTSOE_TOKEN    = os.environ.get("ENTSOE_TOKEN", "138899c3-59b3-48ef-9dfd-03406794210d")
 ENTSOE_URL      = "https://web-api.tp.entsoe.eu/api"
 AGSI_KEY        = os.environ.get("AGSI_KEY", "12a5ed2eb1b9d3f2091abd2213758ec2")
 AGSI_URL        = "https://agsi.gie.eu/api"
@@ -22,8 +22,6 @@ current_year    = current_date.year
 current_month   = current_date.month
 current_day     = current_date.day
 
-# LOGIK: Hvis vi er dag 14 eller senere, inkluder foregående måned.
-# Hvis vi er tidligere end dag 14, kun data til og med 2 måneder siden.
 if current_day >= 14:
     if current_month > 1:
         last_full_month = current_month - 1
@@ -334,31 +332,46 @@ def collect_gas_data():
     if rows:
         supabase.table("gas_storage").upsert(rows, on_conflict="area,year,month").execute()
 
-# Installed capacity bruger individuelle budzoner for hvert land og summerer dem.
-# Dette sikrer at vi kun får kapacitet der faktisk tilhører landet,
-# og undgår fejl fra kontrol-område EIC'er der kan inkludere nabolande.
+# ENTSO-E A68 installed capacity publiceres per kontrol-område, ikke per budzone.
+# Vi bruger kontrol-område EIC'er og filtrerer PSR-typer der ikke findes i landet.
 CAPACITY_COUNTRIES = {
-    "Danmark":  [
-        "10YDK-1--------W",   # DK1
-        "10YDK-2--------M",   # DK2
-    ],
-    "Norge": [
-        "10YNO-1--------2",   # NO1 Østnorge
-        "10YNO-2--------T",   # NO2 Sydnorge
-        "10YNO-3--------J",   # NO3 Midt-Norge
-        "10YNO-4--------9",   # NO4 Nordnorge
-        "10Y1001A1001A48H",   # NO5 Vestnorge
-    ],
-    "Sverige": [
-        "10Y1001A1001A44P",   # SE1
-        "10Y1001A1001A45N",   # SE2
-        "10Y1001A1001A46L",   # SE3
-        "10Y1001A1001A47J",   # SE4
-    ],
-    "Finland":  ["10YFI-1--------U"],   # FI (én budzone)
-    "Holland":  ["10YNL----------L"],   # NL (én budzone)
-    "Frankrig": ["10YFR-RTE------C"],   # FR (én budzone)
-    "Tyskland": ["10Y1001A1001A83F"],   # DE-LU (én budzone)
+    "Danmark": {
+        "eic": "10Y1001A1001A65H",
+        # DK har: sol, vind (on+offshore), biomasse, affald, fossilgas, fossilolie, andre
+        # DK har IKKE: nuclear, brunkulL, stenkul (i større skala), geo, hydro reservoir
+        "allowed_psr": {"B01", "B04", "B06", "B12", "B13", "B14", "B17", "B18", "B19", "B10", "B21"},
+    },
+    "Norge": {
+        "eic": "10YNO-0--------C",
+        # NO har: hydro (reservoir + run-of-river + pumped), vind onshore, biomasse
+        # NO har IKKE: sol (minimal), nuclear, kul, gas i større skala
+        "allowed_psr": {"B01", "B09", "B10", "B11", "B13", "B17", "B19"},
+    },
+    "Sverige": {
+        "eic": "10YSE-1--------K",
+        # SE har: nuclear, hydro, vind, sol, biomasse, affald
+        "allowed_psr": {"B01", "B09", "B10", "B11", "B13", "B14", "B16", "B17", "B18", "B19", "B21"},
+    },
+    "Finland": {
+        "eic": "10YFI-1--------U",
+        # FI har: nuclear, hydro, vind, biomasse, kul, gas, olie, affald
+        "allowed_psr": {"B01", "B04", "B05", "B06", "B09", "B10", "B11", "B13", "B14", "B16", "B17", "B18", "B19"},
+    },
+    "Holland": {
+        "eic": "10YNL----------L",
+        # NL har: gas, sol, vind (on+offshore), biomasse, kul, olie, affald, nuclear
+        "allowed_psr": {"B01", "B04", "B05", "B06", "B12", "B13", "B14", "B16", "B17", "B18", "B19", "B21"},
+    },
+    "Frankrig": {
+        "eic": "10YFR-RTE------C",
+        # FR har: nuclear (stor andel), hydro, gas, vind, sol, biomasse, kul
+        "allowed_psr": {"B01", "B04", "B05", "B09", "B10", "B11", "B12", "B13", "B14", "B16", "B17", "B18", "B19"},
+    },
+    "Tyskland": {
+        "eic": "10Y1001A1001A83F",
+        # DE har: sol, vind (on+offshore), biomasse, gas, stenkul, brunkul, affald, pumped hydro, nuclear (udfaset)
+        "allowed_psr": {"B01", "B02", "B04", "B05", "B09", "B10", "B12", "B13", "B14", "B16", "B17", "B18", "B19", "B21"},
+    },
 }
 
 PSR_NAMES = {
@@ -371,8 +384,9 @@ PSR_NAMES = {
     "B18": "Waste", "B19": "Other", "B20": "Marine", "B21": "Energy storage",
 }
 
-def fetch_capacity_for_eic(eic, year):
-    """Henter installed capacity for ét EIC og returnerer {psr: max_mw}."""
+def fetch_capacity_for_country(eic, year, allowed_psr):
+    """Henter installed capacity for ét kontrol-område og returnerer {psr: max_mw},
+    filtreret til kun de PSR-typer der er relevante for landet."""
     params = {
         "documentType": "A68", "processType": "A33",
         "in_Domain": eic,
@@ -381,22 +395,20 @@ def fetch_capacity_for_eic(eic, year):
         "securityToken": ENTSOE_TOKEN,
     }
     for attempt in range(3):
-        r = requests.get(ENTSOE_URL, params=params)
+        r = requests.get(ENTSOE_URL, params=params, timeout=30)
         if r.status_code == 200:
             break
         elif r.status_code in (503, 429):
             time.sleep(10 * (attempt + 1))
         else:
-            print(f"    ENTSOE fejl status: {r.status_code} for {eic} {year}")
+            print(f"    ENTSOE fejl {r.status_code} for {eic} {year}")
             return {}
     else:
         return {}
 
     if "No matching data found" in r.text:
-        print(f"    ENTSOE: No matching data for {eic} {year}")
         return {}
-    print(f"    ENTSOE status: {r.status_code}, tegn: {len(r.text)}, start: {r.text[:100]}")
-    
+
     try:
         root = ET.fromstring(r.text)
     except ET.ParseError:
@@ -409,6 +421,9 @@ def fetch_capacity_for_eic(eic, year):
         if psr_el is None:
             continue
         psr = psr_el.text
+        # Filtrer PSR-typer der ikke hører til landet
+        if psr not in allowed_psr:
+            continue
         for period in ts.findall("ns:Period", ns):
             for point in period.findall("ns:Point", ns):
                 qty_el = point.find("ns:quantity", ns)
@@ -425,26 +440,21 @@ def fetch_capacity_for_eic(eic, year):
 def collect_capacity_data():
     print("Henter installed capacity...")
     rows = []
-    for country, eic_list in CAPACITY_COUNTRIES.items():
+    for country, config in CAPACITY_COUNTRIES.items():
+        eic         = config["eic"]
+        allowed_psr = config["allowed_psr"]
         for year in range(2020, current_year + 1):
             print(f"  {country} {year}...")
-            combined = defaultdict(float)
-            for eic in eic_list:
-                zone_data = fetch_capacity_for_eic(eic, year)
-                for psr, mw in zone_data.items():
-                    combined[psr] += mw
-                time.sleep(1)
-
-            if combined:
-                print(f"  Fandt {len(combined)} PSR typer for {country} {year}")
-            else:
-                print(f"  INGEN data for {country} {year}")
-            for psr, mw in combined.items():
+            data = fetch_capacity_for_country(eic, year, allowed_psr)
+            if not data:
+                print(f"    Ingen data for {country} {year}")
+            for psr, mw in data.items():
                 rows.append({
                     "country": country, "psr_type": psr,
                     "psr_name": PSR_NAMES.get(psr, psr),
                     "year": year, "value_mw": mw
                 })
+            time.sleep(1)
 
     if rows:
         supabase.table("installed_capacity").upsert(rows, on_conflict="country,psr_type,year").execute()
