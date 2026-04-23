@@ -390,8 +390,16 @@ CAPACITY_COUNTRIES = {
     
     "Holland": {
         "eics": ["10YNL----------L"],
-        "allowed_psr": {"B01", "B04", "B05", "B10", "B12", "B13", "B14", "B16", "B18", "B19"},
-        "psr_map": {"B14": "B16", "B16": "B14", "B18": "B12", "B19": "B13"},
+        "allowed_psr": {"B01", "B04", "B05", "B11", "B14", "B16", "B17", "B18", "B19", "B20"},
+        "psr_map": {
+            "B11": "B10",  # -> Hydro Run-of-river
+            "B14": "B16",  # -> Nuclear
+            "B16": "B14",  # -> Solar
+            "B17": "B18",  # -> Waste
+            "B18": "B12",  # -> Wind Offshore
+            "B19": "B13",  # -> Wind Onshore
+            "B20": "B19",  # -> Other
+        },
     },
     "Frankrig": {
         "eics": ["10YFR-RTE------C"],
@@ -611,7 +619,8 @@ def test_capacity_raw(eic, year=2026):
 
 if __name__ == "__main__":
     for name, eic in [
-        ("NL", "10YNL----------L"),
+        ("FR", "10YFR-RTE------C"),
+        ("DE", "10Y1001A1001A83F"),
     ]:
         print(f"\n=== {name} ===")
         test_capacity_raw(eic)
