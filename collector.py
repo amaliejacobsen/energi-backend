@@ -434,14 +434,17 @@ def collect_capacity_data():
     print("Henter installed capacity...")
     rows = []
     for country, config in CAPACITY_COUNTRIES.items():
+        if country != "Danmark":
+            continue
         eics        = config["eics"]
         allowed_psr = config["allowed_psr"]
         psr_map     = config["psr_map"]
-        for year in range(2020, current_year + 1):
+        for year in [2026]:
             print(f"  {country} {year}...")
             combined = defaultdict(float)
             for eic in eics:
                 data = fetch_capacity_for_eic(eic, year, allowed_psr, psr_map)
+                print(f"    {eic}: {data}")
                 for psr, mw in data.items():
                     combined[psr] += mw
                 time.sleep(1)
