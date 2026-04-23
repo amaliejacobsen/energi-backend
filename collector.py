@@ -336,9 +336,9 @@ def collect_gas_data():
 # Vi bruger kontrol-område EIC'er og filtrerer PSR-typer der ikke findes i landet.
 CAPACITY_COUNTRIES = {
     "Danmark": {
-        "eics": ["10YDK-1--------W", "10YDK-2--------M"],
-        "allowed_psr": {"B01", "B04", "B05", "B06", "B10", "B12", "B13", "B14"},
-        "psr_map": {},
+    "eics": ["10YDK-1--------W", "10YDK-2--------M"],
+    "allowed_psr": None,  # Midlertidig – vis alle
+    "psr_map": {},
     },
     "Norge": {
         "eics": ["10YNO-0--------C"],
@@ -408,7 +408,7 @@ def fetch_capacity_for_eic(eic, year, allowed_psr, psr_map):
         if psr_el is None:
             continue
         psr = psr_el.text
-        if psr not in allowed_psr:
+        if allowed_psr and psr not in allowed_psr:
             continue
         for period in ts.findall("ns:Period", ns):
             for point in period.findall("ns:Point", ns):
