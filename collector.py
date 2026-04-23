@@ -604,50 +604,6 @@ def collect_consumption_data():
         supabase.table("consumption_hourly").upsert(h_rows, on_conflict="zone,year,hour").execute()
     print("Forbrugsdata gemt.")
 
-def test_capacity_raw(eic, year=2026):
-    params = {
-        "documentType": "A68", "processType": "A33",
-        "in_Domain": eic,
-        "periodStart": f"{year}01010000",
-        "periodEnd":   f"{year}12312300",
-        "securityToken": ENTSOE_TOKEN,
-    }
-    r = requests.get(ENTSOE_URL, params=params, timeout=30)
-    print(f"Status: {r.status_code} | EIC: {eic}")
-    if r.status_code != 200 or "No matching data found" in r.text:
-        print("  Ingen data")
-        return
-    root = ET.fromstring(r.text)
-    ns = {"ns": "urn:iec62325.351:tc57wg16:451-6:generationloaddocument:3:0"}
-    seen = {}
-    for ts in root.findall(".//ns:TimeSeries", ns):
-        psr_el = ts.find(".//ns:psrType", ns)
-        if psr_el is None:
-            continue
-        psr = psr_el.text
-        for period in ts.findall("ns:Period", ns):
-            for point in period.findall("ns:Point", ns):
-                qty_el = point.find("ns:quantity", ns)
-                if qty_el is None:
-                    continue
-                try:
-                    qty = float(qty_el.text)
-                except ValueError:
-                    continue
-                if qty > seen.get(psr, 0):
-                    seen[psr] = qty
-    for psr, mw in sorted(seen.items()):
-        print(f"  {psr} ({PSR_NAMES.get(psr, '?')}): {mw} MW")
-
-if __name__ == "__main__":
-    collect_all()
-
-    if m_rows:
-        supabase.table("consumption").upsert(m_rows, on_conflict="zone,year,month").execute()
-    if h_rows:
-        supabase.table("consumption_hourly").upsert(h_rows, on_conflict="zone,year,hour").execute()
-    print("Forbrugsdata gemt.")
-
 def collect_all():
     print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
     collect_dk_data()
