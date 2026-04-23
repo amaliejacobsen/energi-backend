@@ -601,15 +601,21 @@ def test_capacity_raw(eic, year=2026):
         print(f"  {psr} ({PSR_NAMES.get(psr, '?')}): {mw} MW")
 
 if __name__ == "__main__":
-    # Test norske zoner
     for name, eic in [
-        ("NO kontrol-område", "10YNO-0--------C"),
-        ("NO1", "10YNO-1--------2"),
-        ("NO2", "10YNO-2--------T"),
-        ("NO3", "10YNO-3--------J"),
-        ("NO4", "10YNO-4--------9"),
-        ("NO5", "10Y1001A1001A48H"),
+        ("SE kontrol-område", "10YSE-1--------K"),
+        ("SE1", "10Y1001A1001A44P"),
+        ("SE2", "10Y1001A1001A45N"),
+        ("SE3", "10Y1001A1001A46L"),
+        ("SE4", "10Y1001A1001A47J"),
+        ("FI", "10YFI-1--------U"),
+        ("FR", "10YFR-RTE------C"),
+        ("DK kontrol-område", "10Y1001A1001A65H"),
+        ("DK1", "10YDK-1--------W"),
+        ("DK2", "10YDK-2--------M"),
     ]:
+        print(f"\n=== {name} ===")
+        test_capacity_raw(eic)
+        time.sleep(1)
         print(f"\n=== {name} ===")
         test_capacity_raw(eic)
         time.sleep(1)
