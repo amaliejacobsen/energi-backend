@@ -336,41 +336,36 @@ def collect_gas_data():
 # Vi bruger kontrol-område EIC'er og filtrerer PSR-typer der ikke findes i landet.
 CAPACITY_COUNTRIES = {
     "Danmark": {
-        "eic": "10Y1001A1001A65H",
-        # DK har: sol, vind (on+offshore), biomasse, affald, fossilgas, fossilolie, andre
-        # DK har IKKE: nuclear, brunkulL, stenkul (i større skala), geo, hydro reservoir
-        "allowed_psr": {"B01", "B04", "B06", "B12", "B13", "B14", "B17", "B18", "B19", "B10", "B21"},
+    "eic": "10Y1001A1001A65H",
+    "allowed_psr": {"B01", "B04", "B05", "B06", "B10", "B12", "B13", "B14"},
     },
+    
     "Norge": {
-        "eic": "10YNO-0--------C",
-        # NO har: hydro (reservoir + run-of-river + pumped), vind onshore, biomasse
-        # NO har IKKE: sol (minimal), nuclear, kul, gas i større skala
-        "allowed_psr": {"B01", "B09", "B10", "B11", "B13", "B17", "B19"},
+    "eic": "10YNO-0--------C",
+    "allowed_psr": {"B01", "B04", "B09", "B10", "B11", "B12", "B13", "B14", "B17", "B18"},
     },
+    
     "Sverige": {
-        "eic": "10YSE-1--------K",
-        # SE har: nuclear, hydro, vind, sol, biomasse, affald
-        "allowed_psr": {"B01", "B09", "B10", "B11", "B13", "B14", "B16", "B17", "B18", "B19", "B21"},
+    "eic": "10YSE-1--------K",
+    "allowed_psr": {"B01", "B09", "B10", "B11", "B13", "B14", "B16", "B17", "B18", "B19", "B21"},
     },
     "Finland": {
-        "eic": "10YFI-1--------U",
-        # FI har: nuclear, hydro, vind, biomasse, kul, gas, olie, affald
-        "allowed_psr": {"B01", "B04", "B05", "B06", "B09", "B10", "B11", "B13", "B14", "B16", "B17", "B18", "B19"},
+    "eic": "10YFI-1--------U",
+    "allowed_psr": {"B01", "B04", "B05", "B06", "B08", "B10", "B13", "B14", "B16", "B17", "B18", "B19", "B21"},
     },
     "Holland": {
-        "eic": "10YNL----------L",
-        # NL har: gas, sol, vind (on+offshore), biomasse, kul, olie, affald, nuclear
-        "allowed_psr": {"B01", "B04", "B05", "B06", "B12", "B13", "B14", "B16", "B17", "B18", "B19", "B21"},
+    "eic": "10YNL----------L",
+    "allowed_psr": {"B01", "B04", "B05", "B06", "B10", "B12", "B13", "B14", "B16", "B17", "B18", "B19", "B21"},
     },
+    
     "Frankrig": {
-        "eic": "10YFR-RTE------C",
-        # FR har: nuclear (stor andel), hydro, gas, vind, sol, biomasse, kul
-        "allowed_psr": {"B01", "B04", "B05", "B09", "B10", "B11", "B12", "B13", "B14", "B16", "B17", "B18", "B19"},
+    "eic": "10YFR-RTE------C",
+    "allowed_psr": {"B01", "B04", "B05", "B06", "B09", "B10", "B11", "B12", "B13", "B14", "B15", "B16", "B18", "B19", "B20"},
     },
+    
     "Tyskland": {
-        "eic": "10Y1001A1001A83F",
-        # DE har: sol, vind (on+offshore), biomasse, gas, stenkul, brunkul, affald, pumped hydro, nuclear (udfaset)
-        "allowed_psr": {"B01", "B02", "B04", "B05", "B09", "B10", "B12", "B13", "B14", "B16", "B17", "B18", "B19", "B21"},
+    "eic": "10Y1001A1001A83F",
+    "allowed_psr": {"B01", "B02", "B03", "B04", "B05", "B06", "B09", "B10", "B11", "B12", "B13", "B14", "B15", "B17", "B18", "B19", "B21"},
     },
 }
 
