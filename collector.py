@@ -348,6 +348,27 @@ CAPACITY_COUNTRIES = {
         "allowed_psr": {"B01", "B04", "B05", "B06", "B11", "B16", "B18", "B19"},
         "psr_map": {"B16": "B14", "B18": "B12", "B19": "B13", "B11": "B10"},
     },
+
+    "DK1": {
+        "eics": ["10YDK-1--------W"],
+        "allowed_psr": {"B01", "B04", "B05", "B06", "B11", "B16", "B18", "B19"},
+        "psr_map": {
+            "B11": "B10",  # -> Hydro Run-of-river
+            "B16": "B14",  # -> Solar
+            "B18": "B12",  # -> Wind Offshore
+            "B19": "B13",  # -> Wind Onshore
+        },
+    },
+    "DK2": {
+        "eics": ["10YDK-2--------M"],
+        "allowed_psr": {"B01", "B04", "B05", "B06", "B11", "B16", "B18", "B19"},
+        "psr_map": {
+            "B11": "B10",  # -> Hydro Run-of-river
+            "B16": "B14",  # -> Solar
+            "B18": "B12",  # -> Wind Offshore
+            "B19": "B13",  # -> Wind Onshore
+        },
+    },
     
     "Norge": {
         "eics": [
@@ -445,7 +466,16 @@ def fetch_capacity_for_eic(eic, year, allowed_psr, psr_map):
         "securityToken": ENTSOE_TOKEN,
     }
     for attempt in range(3):
-        r = requests.get(ENTSOE_URL, params=params, timeout=30)
+        try:
+            r = requests.get(ENTSOE_URL, params=params, timeout=120)
+        except requests.exceptions.ReadTimeout:
+            print(f"    Timeout forsøg {attempt+1} for {eic} {year}, prøver igen...")
+            time.sleep(15 * (attempt + 1))
+            continue
+        except Exception as e:
+            print(f"    Fejl for {eic} {year}: {e}")
+            return {}
+
         if r.status_code == 200:
             break
         elif r.status_code in (503, 429):
@@ -454,6 +484,7 @@ def fetch_capacity_for_eic(eic, year, allowed_psr, psr_map):
             print(f"    ENTSOE fejl {r.status_code} for {eic} {year}")
             return {}
     else:
+        print(f"    Alle forsøg fejlede for {eic} {year}")
         return {}
 
     if "No matching data found" in r.text:
@@ -471,7 +502,7 @@ def fetch_capacity_for_eic(eic, year, allowed_psr, psr_map):
         if psr_el is None:
             continue
         psr = psr_el.text
-        if allowed_psr is not None and psr not in allowed_psr:
+        if allowed_psr is not None and len(allowed_psr) > 0 and psr not in allowed_psr:
             continue
         for period in ts.findall("ns:Period", ns):
             for point in period.findall("ns:Point", ns):
