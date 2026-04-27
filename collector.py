@@ -456,6 +456,7 @@ CAPACITY_COUNTRIES = {
             "B25": "B21",  # -> Energy storage
         },
     },
+}
 
 def fetch_capacity_for_eic(eic, year, allowed_psr, psr_map):
     params = {
