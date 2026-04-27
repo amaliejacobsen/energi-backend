@@ -369,7 +369,7 @@ CAPACITY_COUNTRIES = {
             "B19": "B13",  # -> Wind Onshore
         },
     },
-    
+
     "Norge": {
         "eics": [
             "10YNO-1--------2",
@@ -380,12 +380,12 @@ CAPACITY_COUNTRIES = {
         ],
         "allowed_psr": {"B01", "B04", "B10", "B11", "B12", "B15", "B16", "B17", "B18", "B19", "B20"},
         "psr_map": {
-            "B11": "B09",  # -> Hydro Pumped Storage
+            "B10": "B09",  # -> Hydro Pumped Storage
+            "B11": "B10",  # -> Hydro Run-of-river
             "B12": "B11",  # -> Hydro Water Reservoir
             "B15": "B17",  # -> Other renewable
-            "B16": "B14",  # -> Solar
+             "B16": "B14",  # -> Solar
             "B17": "B18",  # -> Waste
-            "B18": "B12",  # -> Wind Offshore
             "B19": "B13",  # -> Wind Onshore
             "B20": "B19",  # -> Other
         },
