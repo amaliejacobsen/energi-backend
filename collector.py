@@ -401,7 +401,7 @@ CAPACITY_COUNTRIES = {
         "psr_map": {
             "B11": "B10",  # -> Hydro Run-of-river
             "B14": "B16",  # -> Nuclear
-            "B15": "B12",  # -> Wind Offshore
+            "B15": "B17",  # -> Other renewable
             "B16": "B14",  # -> Solar
             "B17": "B18",  # -> Waste
             "B19": "B13",  # -> Wind Onshore
