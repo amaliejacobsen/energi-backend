@@ -345,9 +345,10 @@ PSR_NAMES = {
 CAPACITY_COUNTRIES = {
     "Danmark": {
         "eics": ["10YDK-1--------W", "10YDK-2--------M"],
-        "allowed_psr": None,
+        "allowed_psr": {"B01", "B04", "B05", "B06", "B11", "B16", "B18", "B19"},
         "psr_map": {"B16": "B14", "B18": "B12", "B19": "B13", "B11": "B10"},
     },
+    
     "Norge": {
         "eics": [
             "10YNO-1--------2",
@@ -358,8 +359,8 @@ CAPACITY_COUNTRIES = {
         ],
         "allowed_psr": {"B01", "B04", "B10", "B11", "B12", "B15", "B16", "B17", "B18", "B19", "B20"},
         "psr_map": {
-            "B11": "B09",  # -> Hydro Pumped Storage
-            "B12": "B11",  # -> Hydro Water Reservoir
+            "B10": "B09",  # -> Hydro Pumped Storage
+            "B11": "B10",  # -> Hydro Run-of-river
             "B15": "B17",  # -> Other renewable
             "B16": "B14",  # -> Solar
             "B17": "B18",  # -> Waste
