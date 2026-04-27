@@ -447,6 +447,7 @@ CAPACITY_COUNTRIES = {
             "B10": "B09",  # -> Hydro Pumped Storage
             "B11": "B10",  # -> Hydro Run-of-river
             "B12": "B11",  # -> Hydro Water Reservoir
+            "B15": "B17",  # -> Other renewable
             "B16": "B14",  # -> Solar
             "B17": "B18",  # -> Waste
             "B18": "B12",  # -> Wind Offshore
@@ -455,7 +456,6 @@ CAPACITY_COUNTRIES = {
             "B25": "B21",  # -> Energy storage
         },
     },
-}
 
 def fetch_capacity_for_eic(eic, year, allowed_psr, psr_map):
     params = {
