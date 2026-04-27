@@ -538,7 +538,7 @@ def collect_capacity_data():
     print("Henter installed capacity...")
     rows = []
     for country, config in CAPACITY_COUNTRIES.items():
-        if country not in ["Norge", "Finland", "Tyskland"]:
+        if country not in ["Norge", "Finland", "Tyskland", "NO1", "NO2", "NO3", "NO4", "NO5"]:
             continue
         eics        = config["eics"]
         allowed_psr = config["allowed_psr"]
