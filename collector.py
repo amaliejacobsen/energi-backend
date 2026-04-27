@@ -577,23 +577,41 @@ def fetch_consumption_monthly(eic_code, year, token):
         "periodStart": f"{year}01010000", "periodEnd": f"{year}12312300",
         "securityToken": token,
     }
-    for attempt in range(3):
-        r = requests.get(ENTSOE_URL, params=params, timeout=60)
-        if r.status_code == 200:
-            break
-        elif r.status_code in (503, 429):
+    
+    r = None
+    for attempt in range(5): # Øget til 5 forsøg
+        try:
+            print(f"      Henter forbrug for {eic_code} {year} (Forsøg {attempt + 1})...")
+            r = requests.get(ENTSOE_URL, params=params, timeout=120) # Øget timeout til 120s
+            
+            if r.status_code == 200:
+                break
+            elif r.status_code in (503, 429):
+                print(f"      Server travl (Status {r.status_code}). Venter...")
+                time.sleep(20 * (attempt + 1))
+            else:
+                print(f"      ENTSO-E returnerede fejl {r.status_code}")
+                return {}, {}
+        except (requests.exceptions.ReadTimeout, requests.exceptions.ConnectTimeout):
+            print(f"      TIMEOUT for {eic_code} {year}. Prøver igen om lidt...")
             time.sleep(15 * (attempt + 1))
-        else:
+            continue
+        except Exception as e:
+            print(f"      Uventet fejl: {e}")
             return {}, {}
     else:
+        print(f"      Kunne ikke hente data efter alle forsøg.")
         return {}, {}
 
-    if "No matching data found" in r.text:
+    if r is None or "No matching data found" in r.text:
         return {}, {}
+        
     try:
         root = ET.fromstring(r.text)
     except ET.ParseError:
+        print("      Kunne ikke læse XML (ParseError)")
         return {}, {}
+
 
     ns_uri = root.tag.split("}")[0][1:] if root.tag.startswith("{") else ""
     prefix = f"{{{ns_uri}}}" if ns_uri else ""
