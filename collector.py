@@ -409,6 +409,7 @@ CAPACITY_COUNTRIES = {
             "B25": "B21",  # -> Energy storage
         },
     },
+
     "Holland": {
         "eics": ["10YNL----------L"],
         "allowed_psr": {"B01", "B04", "B05", "B11", "B14", "B16", "B17", "B18", "B19", "B20"},
@@ -528,6 +529,8 @@ def collect_capacity_data():
     print("Henter installed capacity...")
     rows = []
     for country, config in CAPACITY_COUNTRIES.items():
+        if country not in ["Norge", "Finland", "Tyskland"]:
+            continue
         eics        = config["eics"]
         allowed_psr = config["allowed_psr"]
         psr_map     = config["psr_map"]
@@ -639,11 +642,7 @@ def collect_consumption_data():
 
 def collect_all():
     print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
-    collect_dk_data()
-    collect_gas_data()
-    collect_hydro_data()
     collect_capacity_data()
-    collect_consumption_data()
     print(f"\nSlut: {datetime.now()}")
 
 if __name__ == "__main__":
