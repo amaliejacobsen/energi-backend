@@ -538,8 +538,6 @@ def collect_capacity_data():
     print("Henter installed capacity...")
     rows = []
     for country, config in CAPACITY_COUNTRIES.items():
-        if country not in ["Norge", "Finland", "Tyskland", "NO1", "NO2", "NO3", "NO4", "NO5"]:
-            continue
         eics        = config["eics"]
         allowed_psr = config["allowed_psr"]
         psr_map     = config["psr_map"]
@@ -651,7 +649,11 @@ def collect_consumption_data():
 
 def collect_all():
     print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
+    collect_dk_data()
+    collect_gas_data()
+    collect_hydro_data()
     collect_capacity_data()
+    collect_consumption_data()
     print(f"\nSlut: {datetime.now()}")
 
 if __name__ == "__main__":
