@@ -256,6 +256,80 @@ def fetch_hydro_monthly_a75(eic_code, year, token):
         time.sleep(1)
     return dict(monthly)
 
+NUCLEAR_COUNTRIES = {
+    "Finland":  "10YFI-1--------U",
+    "Frankrig": "10YFR-RTE------C",
+}
+
+def fetch_nuclear_monthly(eic_code, year, token):
+    monthly = defaultdict(float)
+    for month in range(1, 13):
+        next_year, next_month = (year + 1, 1) if month == 12 else (year, month + 1)
+        params = {
+            "documentType": "A75", "processType": "A16",
+            "in_Domain": eic_code,
+            "periodStart": f"{year}{month:02d}010000",
+            "periodEnd":   f"{next_year}{next_month:02d}010000",
+            "securityToken": token,
+        }
+        for attempt in range(3):
+            r = requests.get(ENTSOE_URL, params=params)
+            if r.status_code == 200:
+                break
+            elif r.status_code in (503, 429):
+                time.sleep(10 * (attempt + 1))
+            else:
+                break
+        else:
+            continue
+        try:
+            root = ET.fromstring(r.text)
+        except ET.ParseError:
+            continue
+        ns = {"ns": "urn:iec62325.351:tc57wg16:451-6:generationloaddocument:3:0"}
+        for ts in root.findall(".//ns:TimeSeries", ns):
+            psr_el = ts.find(".//ns:psrType", ns)
+            if psr_el is None or psr_el.text != "B16":
+                continue
+            for period in ts.findall("ns:Period", ns):
+                res_el = period.find("ns:resolution", ns)
+                resolution = res_el.text if res_el is not None else "PT60M"
+                for point in period.findall("ns:Point", ns):
+                    qty_el = point.find("ns:quantity", ns)
+                    if qty_el is None:
+                        continue
+                    try:
+                        qty = float(qty_el.text)
+                    except ValueError:
+                        continue
+                    if resolution == "PT15M":
+                        qty /= 4
+                    monthly[month] += qty
+        time.sleep(1)
+    return dict(monthly)
+
+def collect_nuclear_data():
+    print("Henter nuclear data...")
+    rows = []
+    for country, eic in NUCLEAR_COUNTRIES.items():
+        for year in fetch_years:
+            print(f"  {country} {year}...")
+            monthly = fetch_nuclear_monthly(eic, year, ENTSOE_TOKEN)
+            for month, val in monthly.items():
+                if is_too_recent(year, month):
+                    continue
+                rows.append({
+                    "country": country,
+                    "year": year,
+                    "month": month,
+                    "value_mwh": val
+                })
+    if rows:
+        supabase.table("nuclear_production").upsert(rows, on_conflict="country,year,month").execute()
+        print(f"Nuclear data gemt ({len(rows)} rækker).")
+    else:
+        print("Ingen nuclear data fundet.")
+
 def collect_hydro_data():
     print("Henter hydro data...")
     rows = []
@@ -670,6 +744,7 @@ def collect_all():
     collect_dk_data()
     collect_gas_data()
     collect_hydro_data()
+    collect_nuclear_data()
     collect_capacity_data()
     collect_consumption_data()
     print(f"\nSlut: {datetime.now()}")
