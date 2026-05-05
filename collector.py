@@ -733,12 +733,33 @@ def collect_consumption_data():
                 h_rows.append({"zone": zone, "year": year, "hour": hour, "value_mwh": val})
             time.sleep(1)
 
+    # Håndtering af månedlige data (consumption)
     if m_rows:
-        supabase.table("consumption").upsert(m_rows, on_conflict="zone,year,month").execute()
-    if h_rows:
-        supabase.table("consumption_hourly").upsert(h_rows, on_conflict="zone,year,hour").execute()
-    print("Forbrugsdata gemt.")
+        unique_m_rows = {}
+        for row in m_rows:
+            # Skaber en unik nøgle for kombinationen af zone, år og måned
+            m_key = f"{row['zone']}_{row['year']}_{row['month']}"
+            unique_m_rows[m_key] = row
+        
+        supabase.table("consumption").upsert(
+            list(unique_m_rows.values()), 
+            on_conflict="zone,year,month"
+        ).execute()
 
+    # Håndtering af timelige data (consumption_hourly)
+    if h_rows:
+        unique_h_rows = {}
+        for row in h_rows:
+            # Skaber en unik nøgle for kombinationen af zone, år og time
+            h_key = f"{row['zone']}_{row['year']}_{row['hour']}"
+            unique_h_rows[h_key] = row
+        
+        supabase.table("consumption_hourly").upsert(
+            list(unique_h_rows.values()), 
+            on_conflict="zone,year,hour"
+        ).execute()
+
+    print("Forbrugsdata gemt (rensede for dubletter).")
 
 def collect_dk_hourly_data():
     print("Henter DK timesdata...")
