@@ -732,6 +732,8 @@ def fetch_consumption_monthly(eic_code, year, token):
     h_avg = {h: sum(v) / len(v) for h, v in hourly.items() if v}
     
     return m_avg, h_avg
+
+
 def collect_consumption_data():
     print("Henter forbrug...")
     m_rows = []
@@ -845,16 +847,37 @@ def collect_dk_hourly_data():
 
     print("DK timesdata gemt.")
 
-def collect_all():
-    print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
-    collect_dk_data()
-    collect_dk_hourly_data()
-    collect_gas_data()
-    collect_hydro_data()
-    collect_nuclear_data()
-    collect_capacity_data()
-    collect_consumption_data()
-    print(f"\nSlut: {datetime.now()}")
-
 if __name__ == "__main__":
-    collect_all()
+    for name, eic in [
+        ("Finland", "10YFI-1--------U"),
+        ("Frankrig", "10YFR-RTE------C"),
+    ]:
+        print(f"\n=== {name} ===")
+        params = {
+            "documentType": "A75", "processType": "A16",
+            "in_Domain": eic,
+            "periodStart": "202401010000",
+            "periodEnd":   "202402010000",
+            "securityToken": ENTSOE_TOKEN,
+        }
+        r = requests.get(ENTSOE_URL, params=params, timeout=30)
+        print(f"Status: {r.status_code}")
+        root = ET.fromstring(r.text)
+        ns = {"ns": "urn:iec62325.351:tc57wg16:451-6:generationloaddocument:3:0"}
+        seen = {}
+        for ts in root.findall(".//ns:TimeSeries", ns):
+            psr_el = ts.find(".//ns:psrType", ns)
+            if psr_el is None:
+                continue
+            psr = psr_el.text
+            qty_total = 0
+            for period in ts.findall("ns:Period", ns):
+                for point in period.findall("ns:Point", ns):
+                    qty_el = point.find("ns:quantity", ns)
+                    if qty_el is not None:
+                        try: qty_total += float(qty_el.text)
+                        except: pass
+            seen[psr] = seen.get(psr, 0) + qty_total
+        for psr, total in sorted(seen.items()):
+            print(f"  {psr} ({PSR_NAMES.get(psr, '?')}): {total:.0f} MWh")
+        time.sleep(1)
