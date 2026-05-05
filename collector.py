@@ -819,7 +819,7 @@ def collect_dk_hourly_data():
         solar_dict = {}
         offshore_dict = {}
         onshore_dict = {}
-       for rec in fetch_all_records("ProductionConsumptionSettlement", area):
+        for rec in fetch_all_records("ProductionConsumptionSettlement", area):
             dt = datetime.fromisoformat(rec["HourDK"].replace('Z', '+00:00'))
             # FJERNET: if is_too_recent(dt.year, dt.month): continue
             dt_iso = dt.isoformat()
