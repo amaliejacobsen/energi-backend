@@ -769,8 +769,6 @@ def collect_dk_hourly_data():
         price_dict = {}
         for rec in fetch_all_records("Elspotprices", area):
             dt = datetime.fromisoformat(rec["HourDK"].replace('Z', '+00:00'))
-            if is_too_recent(dt.year, dt.month):
-                continue
             price_dict[dt.isoformat()] = {
                 "area": area,
                 "datetime": dt.isoformat(),
@@ -778,8 +776,6 @@ def collect_dk_hourly_data():
             }
         for rec in fetch_all_records("DayAheadPrices", area):
             dt = datetime.fromisoformat(rec["TimeDK"].replace('Z', '+00:00'))
-            if is_too_recent(dt.year, dt.month):
-                continue
             dt_iso = dt.isoformat()
             if dt_iso not in price_dict:
                 price_dict[dt_iso] = {
@@ -799,10 +795,9 @@ def collect_dk_hourly_data():
         solar_dict = {}
         offshore_dict = {}
         onshore_dict = {}
-        for rec in fetch_all_records("ProductionConsumptionSettlement", area):
+       for rec in fetch_all_records("ProductionConsumptionSettlement", area):
             dt = datetime.fromisoformat(rec["HourDK"].replace('Z', '+00:00'))
-            if is_too_recent(dt.year, dt.month):
-                continue
+            # FJERNET: if is_too_recent(dt.year, dt.month): continue
             dt_iso = dt.isoformat()
             solar = (rec.get("SolarPowerLt10kW_MWh", 0) or 0) + \
                     (rec.get("SolarPowerGe10Lt40kW_MWh", 0) or 0) + \
