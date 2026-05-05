@@ -289,7 +289,7 @@ def fetch_nuclear_monthly(eic_code, year, token):
         ns = {"ns": "urn:iec62325.351:tc57wg16:451-6:generationloaddocument:3:0"}
         for ts in root.findall(".//ns:TimeSeries", ns):
             psr_el = ts.find(".//ns:psrType", ns)
-            if psr_el is None or psr_el.text != "B16":
+            if psr_el is None or psr_el.text != "B14":
                 continue
             for period in ts.findall("ns:Period", ns):
                 res_el = period.find("ns:resolution", ns)
