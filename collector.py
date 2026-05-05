@@ -646,35 +646,29 @@ def fetch_consumption_monthly(eic_code, year, token):
     monthly = defaultdict(list)
     hourly  = defaultdict(list)
     params = {
-        "documentType": "A65", "processType": "A16",
+        "documentType": "A65", 
+        "processType": "A16",
         "outBiddingZone_Domain": eic_code,
-        "periodStart": f"{year}01010000", "periodEnd": f"{year}12312300",
+        "periodStart": f"{year}01010000", 
+        "periodEnd": f"{year}12312300",
         "securityToken": token,
     }
     
     r = None
-    for attempt in range(5): # Øget til 5 forsøg
+    for attempt in range(5):
         try:
             print(f"      Henter forbrug for {eic_code} {year} (Forsøg {attempt + 1})...")
-            r = requests.get(ENTSOE_URL, params=params, timeout=120) # Øget timeout til 120s
-            
+            r = requests.get(ENTSOE_URL, params=params, timeout=120)
             if r.status_code == 200:
                 break
             elif r.status_code in (503, 429):
-                print(f"      Server travl (Status {r.status_code}). Venter...")
                 time.sleep(20 * (attempt + 1))
             else:
-                print(f"      ENTSO-E returnerede fejl {r.status_code}")
                 return {}, {}
-        except (requests.exceptions.ReadTimeout, requests.exceptions.ConnectTimeout):
-            print(f"      TIMEOUT for {eic_code} {year}. Prøver igen om lidt...")
+        except Exception:
             time.sleep(15 * (attempt + 1))
             continue
-        except Exception as e:
-            print(f"      Uventet fejl: {e}")
-            return {}, {}
     else:
-        print(f"      Kunne ikke hente data efter alle forsøg.")
         return {}, {}
 
     if r is None or "No matching data found" in r.text:
@@ -683,40 +677,61 @@ def fetch_consumption_monthly(eic_code, year, token):
     try:
         root = ET.fromstring(r.text)
     except ET.ParseError:
-        print("      Kunne ikke læse XML (ParseError)")
         return {}, {}
-
 
     ns_uri = root.tag.split("}")[0][1:] if root.tag.startswith("{") else ""
     prefix = f"{{{ns_uri}}}" if ns_uri else ""
 
+    # VIGTIGT: Her sikrer vi unikke tidspunkter
+    unique_data = {} 
+
     for ts in root.findall(f".//{prefix}TimeSeries"):
+        # Vi vil kun have 'Consumption' (A04) og 'Actual' (A05)
+        # Dette sikrer at vi ikke blander forecasts ind i gennemsnittet
+        b_type = ts.find(f"{prefix}businessType")
+        if b_type is not None and b_type.text != "A05":
+            continue
+
         for period in ts.findall(f"{prefix}Period"):
             start_el = period.find(f"{prefix}timeInterval/{prefix}start")
             res_el   = period.find(f"{prefix}resolution")
             if start_el is None or res_el is None:
                 continue
-            start_dt   = datetime.strptime(start_el.text, "%Y-%m-%dT%H:%MZ")
+            
+            # Konverter starttid til datetime objekt
+            start_dt = datetime.strptime(start_el.text, "%Y-%m-%dT%H:%MZ")
             resolution = res_el.text
+            
             for point in period.findall(f"{prefix}Point"):
                 pos_el = point.find(f"{prefix}position")
                 qty_el = point.find(f"{prefix}quantity")
                 if pos_el is None or qty_el is None:
                     continue
+                
                 try:
                     pos = int(pos_el.text)
                     qty = float(qty_el.text)
-                except:
+                    
+                    # Beregn det præcise tidspunkt for dette punkt
+                    offset = (pos - 1) * (15 if resolution == "PT15M" else 60)
+                    dt = start_dt + timedelta(minutes=offset)
+                    
+                    # Gem i dictionary - hvis dt findes i forvejen, overskrives den.
+                    # Dette fjerner dubletterne!
+                    unique_data[dt] = qty
+                except ValueError:
                     continue
-                offset = (pos - 1) * (15 if resolution == "PT15M" else 60)
-                dt = start_dt + timedelta(minutes=offset)
-                monthly[dt.month].append(qty)
-                hourly[dt.hour].append(qty)
 
+    # Fordel de unikke datapunkter til måneds- og time-lister
+    for dt, qty in unique_data.items():
+        monthly[dt.month].append(qty)
+        hourly[dt.hour].append(qty)
+
+    # Beregn gennemsnit
     m_avg = {m: sum(v) / len(v) for m, v in monthly.items() if v}
     h_avg = {h: sum(v) / len(v) for h, v in hourly.items() if v}
+    
     return m_avg, h_avg
-
 def collect_consumption_data():
     print("Henter forbrug...")
     m_rows = []
