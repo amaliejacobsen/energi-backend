@@ -739,9 +739,77 @@ def collect_consumption_data():
         supabase.table("consumption_hourly").upsert(h_rows, on_conflict="zone,year,hour").execute()
     print("Forbrugsdata gemt.")
 
+
+def collect_dk_hourly_data():
+    print("Henter DK timesdata...")
+    
+    for area in areas:
+        # Priser
+        price_rows = []
+        for rec in fetch_all_records("Elspotprices", area):
+            dt = datetime.fromisoformat(rec["HourDK"].replace('Z', '+00:00'))
+            if is_too_recent(dt.year, dt.month):
+                continue
+            price_rows.append({
+                "area": area,
+                "datetime": dt.isoformat(),
+                "price_dkk": rec["SpotPriceDKK"]
+            })
+        for rec in fetch_all_records("DayAheadPrices", area):
+            dt = datetime.fromisoformat(rec["TimeDK"].replace('Z', '+00:00'))
+            if is_too_recent(dt.year, dt.month):
+                continue
+            # Kun tilføj hvis ikke allerede i price_rows
+            if not any(r["datetime"] == dt.isoformat() for r in price_rows):
+                price_rows.append({
+                    "area": area,
+                    "datetime": dt.isoformat(),
+                    "price_dkk": rec["DayAheadPriceDKK"]
+                })
+        if price_rows:
+            # Upsert i batches af 1000
+            for i in range(0, len(price_rows), 1000):
+                supabase.table("dk_prices_hourly").upsert(
+                    price_rows[i:i+1000], on_conflict="area,datetime"
+                ).execute()
+            print(f"  {area} priser gemt ({len(price_rows)} rækker)")
+
+        # Produktion
+        solar_rows = []
+        offshore_rows = []
+        onshore_rows = []
+        for rec in fetch_all_records("ProductionConsumptionSettlement", area):
+            dt = datetime.fromisoformat(rec["HourDK"].replace('Z', '+00:00'))
+            if is_too_recent(dt.year, dt.month):
+                continue
+            dt_iso = dt.isoformat()
+            
+            solar = (rec.get("SolarPowerLt10kW_MWh", 0) or 0) + \
+                    (rec.get("SolarPowerGe10Lt40kW_MWh", 0) or 0) + \
+                    (rec.get("SolarPowerGe40kW_MWh", 0) or 0)
+            offshore = (rec.get("OffshoreWindLt100MW_MWh", 0) or 0) + \
+                       (rec.get("OffshoreWindGe100MW_MWh", 0) or 0)
+            onshore = (rec.get("OnshoreWindLt50kW_MWh", 0) or 0) + \
+                      (rec.get("OnshoreWindGe50kW_MWh", 0) or 0)
+
+            solar_rows.append({"area": area, "source": "solar", "datetime": dt_iso, "value_mwh": solar})
+            offshore_rows.append({"area": area, "source": "offshore", "datetime": dt_iso, "value_mwh": offshore})
+            onshore_rows.append({"area": area, "source": "onshore", "datetime": dt_iso, "value_mwh": onshore})
+
+        for source, rows in [("solar", solar_rows), ("offshore", offshore_rows), ("onshore", onshore_rows)]:
+            if rows:
+                for i in range(0, len(rows), 1000):
+                    supabase.table("dk_production_hourly").upsert(
+                        rows[i:i+1000], on_conflict="area,source,datetime"
+                    ).execute()
+                print(f"  {area} {source} gemt ({len(rows)} rækker)")
+
+    print("DK timesdata gemt.")
+
 def collect_all():
     print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
     collect_dk_data()
+    collect_dk_hourly_data()
     collect_gas_data()
     collect_hydro_data()
     collect_nuclear_data()
