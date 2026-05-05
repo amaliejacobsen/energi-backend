@@ -848,15 +848,17 @@ def collect_dk_hourly_data():
     print("DK timesdata gemt.")
 
 def collect_all():
-    print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
-    collect_dk_data()
-    collect_dk_hourly_data()
-    collect_gas_data()
-    collect_hydro_data()
-    collect_nuclear_data()
-    collect_capacity_data()
-    collect_consumption_data()
-    print(f"\nSlut: {datetime.now()}")
+    print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
+    collect_dk_data()
+    collect_dk_hourly_data()
+    collect_gas_data()
+    collect_hydro_data()
+    collect_nuclear_data()
+    collect_capacity_data()
+    collect_consumption_data()
+    print(f"\nSlut: {datetime.now()}")
+
+
 
 if __name__ == "__main__":
-    collect_nuclear_data()
+    collect_all()
