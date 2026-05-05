@@ -745,45 +745,44 @@ def collect_dk_hourly_data():
     
     for area in areas:
         # Priser
-        price_rows = []
+        price_dict = {}
         for rec in fetch_all_records("Elspotprices", area):
             dt = datetime.fromisoformat(rec["HourDK"].replace('Z', '+00:00'))
             if is_too_recent(dt.year, dt.month):
                 continue
-            price_rows.append({
+            price_dict[dt.isoformat()] = {
                 "area": area,
                 "datetime": dt.isoformat(),
                 "price_dkk": rec["SpotPriceDKK"]
-            })
+            }
         for rec in fetch_all_records("DayAheadPrices", area):
             dt = datetime.fromisoformat(rec["TimeDK"].replace('Z', '+00:00'))
             if is_too_recent(dt.year, dt.month):
                 continue
-            # Kun tilføj hvis ikke allerede i price_rows
-            if not any(r["datetime"] == dt.isoformat() for r in price_rows):
-                price_rows.append({
+            dt_iso = dt.isoformat()
+            if dt_iso not in price_dict:
+                price_dict[dt_iso] = {
                     "area": area,
-                    "datetime": dt.isoformat(),
+                    "datetime": dt_iso,
                     "price_dkk": rec["DayAheadPriceDKK"]
-                })
+                }
+        price_rows = list(price_dict.values())
         if price_rows:
-            # Upsert i batches af 1000
             for i in range(0, len(price_rows), 1000):
                 supabase.table("dk_prices_hourly").upsert(
                     price_rows[i:i+1000], on_conflict="area,datetime"
                 ).execute()
             print(f"  {area} priser gemt ({len(price_rows)} rækker)")
 
-        # Produktion
-        solar_rows = []
-        offshore_rows = []
-        onshore_rows = []
+        # Produktion — brug dict per kilde for at undgå dubletter
+        solar_dict = {}
+        offshore_dict = {}
+        onshore_dict = {}
         for rec in fetch_all_records("ProductionConsumptionSettlement", area):
             dt = datetime.fromisoformat(rec["HourDK"].replace('Z', '+00:00'))
             if is_too_recent(dt.year, dt.month):
                 continue
             dt_iso = dt.isoformat()
-            
             solar = (rec.get("SolarPowerLt10kW_MWh", 0) or 0) + \
                     (rec.get("SolarPowerGe10Lt40kW_MWh", 0) or 0) + \
                     (rec.get("SolarPowerGe40kW_MWh", 0) or 0)
@@ -791,12 +790,12 @@ def collect_dk_hourly_data():
                        (rec.get("OffshoreWindGe100MW_MWh", 0) or 0)
             onshore = (rec.get("OnshoreWindLt50kW_MWh", 0) or 0) + \
                       (rec.get("OnshoreWindGe50kW_MWh", 0) or 0)
+            solar_dict[dt_iso]   = {"area": area, "source": "solar",   "datetime": dt_iso, "value_mwh": solar}
+            offshore_dict[dt_iso] = {"area": area, "source": "offshore", "datetime": dt_iso, "value_mwh": offshore}
+            onshore_dict[dt_iso]  = {"area": area, "source": "onshore",  "datetime": dt_iso, "value_mwh": onshore}
 
-            solar_rows.append({"area": area, "source": "solar", "datetime": dt_iso, "value_mwh": solar})
-            offshore_rows.append({"area": area, "source": "offshore", "datetime": dt_iso, "value_mwh": offshore})
-            onshore_rows.append({"area": area, "source": "onshore", "datetime": dt_iso, "value_mwh": onshore})
-
-        for source, rows in [("solar", solar_rows), ("offshore", offshore_rows), ("onshore", onshore_rows)]:
+        for source, d in [("solar", solar_dict), ("offshore", offshore_dict), ("onshore", onshore_dict)]:
+            rows = list(d.values())
             if rows:
                 for i in range(0, len(rows), 1000):
                     supabase.table("dk_production_hourly").upsert(
