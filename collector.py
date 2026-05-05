@@ -779,30 +779,39 @@ def collect_consumption_data():
 def collect_dk_hourly_data():
     print("Henter DK timesdata...")
     
-    for area in areas:
+    # Brug en direkte liste eller dine eksisterende zoner
+    for area in ["DK1", "DK2"]: 
         # Priser
         price_dict = {}
+        
+        # 1. Hent fra Elspotprices (Historisk data)
         for rec in fetch_all_records("Elspotprices", area):
-            dt = datetime.fromisoformat(rec["HourDK"].replace('Z', '+00:00'))
-            price_dict[dt.isoformat()] = {
+            # HourDK er allerede dansk tid. Vi fjerner 'Z' hvis det findes
+            dt_str = rec["HourDK"].replace('Z', '') 
+            price_dict[dt_str] = {
                 "area": area,
-                "datetime": dt.isoformat(),
+                "datetime": dt_str,
                 "price_dkk": rec["SpotPriceDKK"]
             }
+            
+        # 2. Hent fra DayAheadPrices (Nyeste data/Prognoser)
         for rec in fetch_all_records("DayAheadPrices", area):
-            dt = datetime.fromisoformat(rec["TimeDK"].replace('Z', '+00:00'))
-            dt_iso = dt.isoformat()
-            if dt_iso not in price_dict:
-                price_dict[dt_iso] = {
+            # DayAheadPrices bruger feltet 'TimeDK'
+            dt_str = rec["TimeDK"].replace('Z', '')
+            if dt_str not in price_dict:
+                price_dict[dt_str] = {
                     "area": area,
-                    "datetime": dt_iso,
+                    "datetime": dt_str,
                     "price_dkk": rec["DayAheadPriceDKK"]
                 }
+        
         price_rows = list(price_dict.values())
         if price_rows:
+            # Upsert i bidder af 1000 for at undgå timeout
             for i in range(0, len(price_rows), 1000):
                 supabase.table("dk_prices_hourly").upsert(
-                    price_rows[i:i+1000], on_conflict="area,datetime"
+                    price_rows[i:i+1000], 
+                    on_conflict="area,datetime"
                 ).execute()
             print(f"  {area} priser gemt ({len(price_rows)} rækker)")
 
