@@ -104,6 +104,12 @@ def fetch_all_records(dataset, area, start="2020-01-01"):
                 "offset": offset,
                 "sort": f"{sort_column} asc",
             }, timeout=30)
+            
+            if r.status_code == 429:
+                print(f"  Rate limit ramt for {dataset} ({area}) ved offset {offset}, venter 30s...")
+                time.sleep(30)
+                continue
+                
             r.raise_for_status()
             if not r.text.strip():
                 break
@@ -115,7 +121,7 @@ def fetch_all_records(dataset, area, start="2020-01-01"):
             if len(records) < limit:
                 break
             offset += limit
-            time.sleep(0.3)
+            time.sleep(2)  # Øget fra 0.3 til 2 sekunder
         except Exception as e:
             print(f"Fejl ved hentning af {dataset} ({area}): {e}")
             break
