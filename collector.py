@@ -859,4 +859,13 @@ def collect_all():
     print(f"\nFærdig: {datetime.now()}\n{'='*40}")
 
 if __name__ == "__main__":
-    collect_all()
+    r = requests.get("https://api.energidataservice.dk/dataset/DayAheadPrices", params={
+        "start": "2022-05-01",
+        "end": "2022-05-03",
+        "filter": '{"PriceArea":"DK1"}',
+        "limit": 5,
+        "sort": "TimeDK asc",
+    }, timeout=30)
+    data = r.json()
+    print("Kolonner:", list(data["records"][0].keys()) if data["records"] else "Ingen records")
+    print("Første record:", data["records"][0] if data["records"] else "Tom")
