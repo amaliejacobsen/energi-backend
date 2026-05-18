@@ -922,6 +922,7 @@ def collect_all():
     collect_capacity_data()
     collect_consumption_data()
     collect_dk_hourly_data()
+    collect_hydro_forecast_data():
     print(f"\nFærdig: {datetime.now()}\n{'='*40}")
 
 if __name__ == "__main__":
