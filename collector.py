@@ -861,6 +861,58 @@ def collect_dk_hourly_data():
 
     print("DK timesdata gemt.")
 
+def collect_hydro_forecast_data():
+    print("Henter hydro-nedbørsdata (14 dage bagud + 14 dage frem) via dynamisk API...")
+    
+    # Centrale koordinater for de store nordiske vandreservoirer (Norges fjelde)
+    lat, lon = 61.5, 8.5 
+    variable = 'precipitation_sum'
+    
+    today_dt = datetime.today()
+    today_str = today_dt.strftime("%Y-%m-%d")
+    
+    # Beregn historisk tidsrum (14 dage tilbage indtil i går)
+    date_from = (today_dt - timedelta(days=14)).strftime("%Y-%m-%d")
+    date_to = (today_dt - timedelta(days=1)).strftime("%Y-%m-%d")
+    
+    # 1. Hent historisk data via din variable funktion
+    hist_data = fetch_openmeteo_historical_daily_var(lat, lon, date_from, date_to, variable)
+    
+    # 2. Hent forecast data (inkluderer i dag + 14 dage frem) via din variable funktion
+    forecast_data = fetch_openmeteo_forecast_daily_var(lat, lon, variable, days=15)
+    
+    rows = []
+    
+    # Klargør historisk data
+    for date_str, precip in hist_data.items():
+        rows.append({
+            "date": date_str,
+            "precipitation_mm": precip,
+            "data_type": "historisk"
+        })
+        
+    # Klargør forecast og "i dag" data
+    for date_str, precip in forecast_data.items():
+        if date_str == today_str:
+            data_type = "i dag"
+        elif date_str > today_str:
+            data_type = "forecast"
+        else:
+            continue # Spring over hvis forecast-API overlapper bagud
+            
+        rows.append({
+            "date": date_str,
+            "precipitation_mm": precip,
+            "data_type": data_type
+        })
+        
+    # Send samlet pakke til Supabase
+    if rows:
+        supabase.table("hydro_weather_forecast").upsert(rows, on_conflict="date").execute()
+        print(f"Hydro-prognosedata gemt i Supabase ({len(rows)} rækker).")
+    else:
+        print("Ingen data opsamlet fra Open-Meteo.")
+
 def collect_all():
     print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
     collect_dk_data()
