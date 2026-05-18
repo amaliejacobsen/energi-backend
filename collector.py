@@ -129,13 +129,15 @@ def collect_dk_data():
     offshore_prod = {area: {} for area in areas}
     onshore_prod  = {area: {} for area in areas}
 
-    for area in areas:
-        for rec in fetch_all_records("Elspotprices", area):
+    for rec in fetch_all_records("Elspotprices", area):
             dt = datetime.fromisoformat(rec["HourDK"].replace('Z', '+00:00'))
-            # Priser: inkluder frem til indeværende måned
             if dt.year > current_year or (dt.year == current_year and dt.month > current_month):
                 continue
             hourly_prices[area][dt] = rec["SpotPriceDKK"]
+        
+        print(f"  {area} Elspotprices: {len(hourly_prices[area])} timer hentet")
+        nonzero = sum(1 for v in hourly_prices[area].values() if v and v > 0)
+        print(f"  {area} Elspotprices: {nonzero} timer med pris > 0")
 
         hourly_buffer = defaultdict(list)
         for rec in fetch_all_records("DayAheadPrices", area):
