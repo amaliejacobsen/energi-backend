@@ -22,6 +22,10 @@ current_year    = current_date.year
 current_month   = current_date.month
 current_day     = current_date.day
 
+# Til dk_prices: inkluder frem til i dag inkl. indeværende måned
+current_month_cutoff = current_month
+
+# Til andre datasæt (produktion, gas, hydro): kun hele afsluttede måneder
 if current_day >= 14:
     if current_month > 1:
         last_full_month = current_month - 1
@@ -34,11 +38,6 @@ else:
         last_full_month = 12
     else:
         last_full_month = 11
-
-if last_full_month == 12 and current_month < 3:
-    last_full_year = current_year - 1
-else:
-    last_full_year = current_year
 
 print(f"Dato: {current_date.strftime('%Y-%m-%d')} | Henter data til og med: {last_full_year}-{last_full_month:02d}")
 
@@ -77,9 +76,10 @@ def monthly_weighted(price_dict, prod_dict):
     }
 
 def is_too_recent(year, month):
-    if year > last_full_year:
+    # Tillad data frem til og med den nuværende måned
+    if year > current_year:
         return True
-    if year == last_full_year and month > last_full_month:
+    if year == current_year and month > current_month:
         return True
     return False
 
@@ -126,15 +126,15 @@ def collect_dk_data():
     for area in areas:
         for rec in fetch_all_records("Elspotprices", area):
             dt = datetime.fromisoformat(rec["HourDK"].replace('Z', '+00:00'))
-            if is_too_recent(dt.year, dt.month):
+            # Priser: inkluder frem til indeværende måned
+            if dt.year > current_year or (dt.year == current_year and dt.month > current_month):
                 continue
             hourly_prices[area][dt] = rec["SpotPriceDKK"]
 
         hourly_buffer = defaultdict(list)
-        
         for rec in fetch_all_records("DayAheadPrices", area):
             dt = datetime.fromisoformat(rec["TimeDK"].replace('Z', '+00:00'))
-            if is_too_recent(dt.year, dt.month):
+            if dt.year > current_year or (dt.year == current_year and dt.month > current_month):
                 continue
             dt_hour = dt.replace(minute=0, second=0, microsecond=0)
             hourly_buffer[dt_hour].append(rec["DayAheadPriceDKK"])
@@ -145,8 +145,10 @@ def collect_dk_data():
 
         for rec in fetch_all_records("ProductionConsumptionSettlement", area):
             dt = datetime.fromisoformat(rec["HourDK"].replace('Z', '+00:00'))
+            # Produktion: kun hele afsluttede måneder
             if is_too_recent(dt.year, dt.month):
                 continue
+                
             solar_prod[area][dt] = (rec.get("SolarPowerLt10kW_MWh", 0) or 0) + \
                                    (rec.get("SolarPowerGe10Lt40kW_MWh", 0) or 0) + \
                                    (rec.get("SolarPowerGe40kW_MWh", 0) or 0)
