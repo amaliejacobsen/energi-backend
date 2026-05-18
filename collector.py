@@ -130,12 +130,18 @@ def collect_dk_data():
                 continue
             hourly_prices[area][dt] = rec["SpotPriceDKK"]
 
+        hourly_buffer = defaultdict(list)
+        
         for rec in fetch_all_records("DayAheadPrices", area):
             dt = datetime.fromisoformat(rec["TimeDK"].replace('Z', '+00:00'))
             if is_too_recent(dt.year, dt.month):
                 continue
-            if dt not in hourly_prices[area]:
-                hourly_prices[area][dt] = rec["DayAheadPriceDKK"]
+            dt_hour = dt.replace(minute=0, second=0, microsecond=0)
+            hourly_buffer[dt_hour].append(rec["DayAheadPriceDKK"])
+
+        for dt_hour, prices in hourly_buffer.items():
+            if dt_hour not in hourly_prices[area]:
+                hourly_prices[area][dt_hour] = sum(prices) / len(prices)
 
         for rec in fetch_all_records("ProductionConsumptionSettlement", area):
             dt = datetime.fromisoformat(rec["HourDK"].replace('Z', '+00:00'))
@@ -859,20 +865,4 @@ def collect_all():
     print(f"\nFærdig: {datetime.now()}\n{'='*40}")
 
 if __name__ == "__main__":
-    # Hvornår slutter Elspotprices?
-    r = requests.get("https://api.energidataservice.dk/dataset/Elspotprices", params={
-        "filter": '{"PriceArea":"DK1"}',
-        "limit": 3,
-        "sort": "HourDK desc",
-    }, timeout=30)
-    data = r.json()
-    print("Elspotprices seneste records:", data["records"][:3] if data["records"] else "Tom")
-
-    # Hvornår starter DayAheadPrices?
-    r2 = requests.get("https://api.energidataservice.dk/dataset/DayAheadPrices", params={
-        "filter": '{"PriceArea":"DK1"}',
-        "limit": 3,
-        "sort": "TimeDK asc",
-    }, timeout=30)
-    data2 = r2.json()
-    print("DayAheadPrices tidligste records:", data2["records"][:3] if data2["records"] else "Tom")
+    collect_all()
