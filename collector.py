@@ -859,20 +859,20 @@ def collect_all():
     print(f"\nFærdig: {datetime.now()}\n{'='*40}")
 
 if __name__ == "__main__":
-    # Test 1: Hvad hedder PriceArea feltet?
-    r = requests.get("https://api.energidataservice.dk/dataset/DayAheadPrices", params={
+    # Hvornår slutter Elspotprices?
+    r = requests.get("https://api.energidataservice.dk/dataset/Elspotprices", params={
+        "filter": '{"PriceArea":"DK1"}',
         "limit": 3,
-        "sort": "TimeDK asc",
+        "sort": "HourDK desc",
     }, timeout=30)
     data = r.json()
-    print("Kolonner:", list(data["records"][0].keys()) if data["records"] else "Ingen records")
-    print("Første record:", data["records"][0] if data["records"] else "Tom")
-    
-    # Test 2: Hvad er den tidligste dato?
+    print("Elspotprices seneste records:", data["records"][:3] if data["records"] else "Tom")
+
+    # Hvornår starter DayAheadPrices?
     r2 = requests.get("https://api.energidataservice.dk/dataset/DayAheadPrices", params={
         "filter": '{"PriceArea":"DK1"}',
         "limit": 3,
         "sort": "TimeDK asc",
     }, timeout=30)
     data2 = r2.json()
-    print("\nMed DK1 filter - første records:", data2["records"][:2] if data2["records"] else "Tom")
+    print("DayAheadPrices tidligste records:", data2["records"][:3] if data2["records"] else "Tom")
