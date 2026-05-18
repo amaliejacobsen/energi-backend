@@ -39,6 +39,12 @@ else:
     else:
         last_full_month = 11
 
+if last_full_month == 12 and current_month < 3:
+    last_full_year = current_year - 1
+else:
+    last_full_year = current_year
+    
+
 print(f"Dato: {current_date.strftime('%Y-%m-%d')} | Henter data til og med: {last_full_year}-{last_full_month:02d}")
 
 fetch_years     = list(range(2020, current_year + 1))
