@@ -869,7 +869,7 @@ def collect_dk_hourly_data():
 
     print("DK timesdata gemt.")
 
-def fetch_openmeteo_historical_daily_var(lat, lon, date_from, date_to, variable):
+def fetch_openmeteo_historical_daily_var(lat, lon, date_from, date_to, variable, retries=3):
     url = "https://archive-api.open-meteo.com/v1/archive"
     params = {
         "latitude": lat,
@@ -879,18 +879,21 @@ def fetch_openmeteo_historical_daily_var(lat, lon, date_from, date_to, variable)
         "daily": variable,
         "timezone": "Europe/Oslo",
     }
-    try:
-        r = requests.get(url, params=params, timeout=30)
-        r.raise_for_status()
-        data = r.json()
-        dates = data.get("daily", {}).get("time", [])
-        values = data.get("daily", {}).get(variable, [])
-        return {d: v for d, v in zip(dates, values) if v is not None}
-    except Exception as e:
-        print(f"Fejl ved hentning af historisk nedbør: {e}")
-        return {}
+    for attempt in range(retries):
+        try:
+            r = requests.get(url, params=params, timeout=60)
+            r.raise_for_status()
+            data = r.json()
+            dates = data.get("daily", {}).get("time", [])
+            values = data.get("daily", {}).get(variable, [])
+            return {d: v for d, v in zip(dates, values) if v is not None}
+        except Exception as e:
+            print(f"Forsøg {attempt+1}/{retries} fejlede for ({lat},{lon}): {e}")
+            if attempt < retries - 1:
+                time.sleep(5)
+    return {}
 
-def fetch_openmeteo_forecast_daily_var(lat, lon, variable, days=15):
+def fetch_openmeteo_forecast_daily_var(lat, lon, variable, days=15, retries=3):
     url = "https://api.open-meteo.com/v1/forecast"
     params = {
         "latitude": lat,
@@ -899,16 +902,20 @@ def fetch_openmeteo_forecast_daily_var(lat, lon, variable, days=15):
         "timezone": "Europe/Oslo",
         "forecast_days": days,
     }
-    try:
-        r = requests.get(url, params=params, timeout=30)
-        r.raise_for_status()
-        data = r.json()
-        dates = data.get("daily", {}).get("time", [])
-        values = data.get("daily", {}).get(variable, [])
-        return {d: v for d, v in zip(dates, values) if v is not None}
-    except Exception as e:
-        print(f"Fejl ved hentning af forecast nedbør: {e}")
-        return {}
+    for attempt in range(retries):
+        try:
+            r = requests.get(url, params=params, timeout=60)
+            r.raise_for_status()
+            data = r.json()
+            dates = data.get("daily", {}).get("time", [])
+            values = data.get("daily", {}).get(variable, [])
+            return {d: v for d, v in zip(dates, values) if v is not None}
+        except Exception as e:
+            print(f"Forsøg {attempt+1}/{retries} fejlede for ({lat},{lon}): {e}")
+            if attempt < retries - 1:
+                time.sleep(5)
+    return {}
+
 
 def collect_hydro_forecast_data():
     print("Henter hydro-nedbørsdata...")
