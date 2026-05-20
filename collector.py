@@ -983,6 +983,84 @@ def collect_hydro_forecast_data():
     else:
         print("Ingen data opsamlet.")
 
+
+def collect_temperature_forecast_data():
+    print("Henter temperaturdata...")
+
+    measurement_points = {
+        "Danmark": [
+            {"name": "Danmark", "lat": 56.0, "lon": 10.0, "weight": 1.0},
+        ],
+        "Norge": [
+            {"name": "Vestlandet",  "lat": 60.5, "lon": 7.0,  "weight": 0.30},
+            {"name": "Østlandet",   "lat": 61.5, "lon": 9.5,  "weight": 0.30},
+            {"name": "Midt-Norge",  "lat": 63.0, "lon": 9.0,  "weight": 0.25},
+            {"name": "Nord-Norge",  "lat": 67.0, "lon": 16.0, "weight": 0.15},
+        ],
+        "Sverige": [
+            {"name": "Norrland nord", "lat": 66.0, "lon": 17.0, "weight": 0.35},
+            {"name": "Norrland syd",  "lat": 63.5, "lon": 14.0, "weight": 0.35},
+            {"name": "Dalarna",       "lat": 61.0, "lon": 13.5, "weight": 0.30},
+        ],
+        "Tyskland": [
+            {"name": "Tyskland", "lat": 51.5, "lon": 10.0, "weight": 1.0},
+        ],
+    }
+
+    variable = "temperature_2m_mean"
+    today_dt = datetime.today()
+    today_str = today_dt.strftime("%Y-%m-%d")
+    date_from = (today_dt - timedelta(days=14)).strftime("%Y-%m-%d")
+    date_to   = (today_dt - timedelta(days=1)).strftime("%Y-%m-%d")
+
+    rows = []
+
+    for country, points in measurement_points.items():
+        print(f"  {country} ({len(points)} målepunkter)...")
+
+        aggregated = {}
+
+        for point in points:
+            lat, lon, weight = point["lat"], point["lon"], point["weight"]
+            print(f"    - {point['name']} ({lat}, {lon})...")
+
+            hist_data     = fetch_openmeteo_historical_daily_var(lat, lon, date_from, date_to, variable)
+            forecast_data = fetch_openmeteo_forecast_daily_var(lat, lon, variable, days=15)
+
+            all_data = {}
+            for date_str, temp in hist_data.items():
+                all_data[date_str] = ("historisk", temp)
+            for date_str, temp in forecast_data.items():
+                if date_str == today_str:
+                    all_data[date_str] = ("i dag", temp)
+                elif date_str > today_str:
+                    all_data[date_str] = ("forecast", temp)
+
+            for date_str, (data_type, temp) in all_data.items():
+                if temp is None:
+                    continue
+                if date_str not in aggregated:
+                    aggregated[date_str] = {"weighted_sum": 0.0, "weight_sum": 0.0, "data_type": data_type}
+                aggregated[date_str]["weighted_sum"] += temp * weight
+                aggregated[date_str]["weight_sum"]   += weight
+
+        for date_str, agg in aggregated.items():
+            if agg["weight_sum"] == 0:
+                continue
+            weighted_avg = agg["weighted_sum"] / agg["weight_sum"]
+            rows.append({
+                "country":         country,
+                "date":            date_str,
+                "temperature_c":   round(weighted_avg, 2),
+                "data_type":       agg["data_type"],
+            })
+
+    if rows:
+        supabase.table("temperature_forecast").upsert(rows, on_conflict="country,date").execute()
+        print(f"Temperaturdata gemt ({len(rows)} rækker).")
+    else:
+        print("Ingen data opsamlet.")
+
 def collect_all():
     print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
     collect_dk_data()
@@ -993,6 +1071,7 @@ def collect_all():
     collect_consumption_data()
     collect_dk_hourly_data()
     collect_hydro_forecast_data()
+    collect_temperature_forecast_data()  # ← tilføj her
     print(f"\nFærdig: {datetime.now()}\n{'='*40}")
 
 if __name__ == "__main__":
