@@ -1068,3 +1068,10 @@ def collect_all():
 
 if __name__ == "__main__":
     collect_all()
+
+from datetime import datetime, timedelta
+    lat, lon = 66.0, 17.0
+    date_from = (datetime.today() - timedelta(days=14)).strftime("%Y-%m-%d")
+    date_to = (datetime.today() - timedelta(days=1)).strftime("%Y-%m-%d")
+    result = fetch_openmeteo_historical_daily_var(lat, lon, date_from, date_to, "precipitation_sum")
+    print("Sverige test:", result)
