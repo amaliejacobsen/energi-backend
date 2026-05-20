@@ -912,46 +912,71 @@ def fetch_openmeteo_forecast_daily_var(lat, lon, variable, days=15):
 
 def collect_hydro_forecast_data():
     print("Henter hydro-nedbørsdata...")
-    
-    locations = {
-        "Norge": (61.5, 8.5),
-        "Sverige": (63.0, 15.0),
+
+    measurement_points = {
+        "Norge": [
+            {"name": "Vestlandet",  "lat": 60.5, "lon": 7.0,  "weight": 0.30},  # Store fjordreservoirer
+            {"name": "Østlandet",   "lat": 61.5, "lon": 9.5,  "weight": 0.30},  # Glomma oplandet
+            {"name": "Midt-Norge",  "lat": 63.0, "lon": 9.0,  "weight": 0.25},  # Orkla/Røssåga
+            {"name": "Nord-Norge",  "lat": 67.0, "lon": 16.0, "weight": 0.15},  # Svartisen/Rana
+        ],
+        "Sverige": [
+            {"name": "Norrland nord", "lat": 66.0, "lon": 17.0, "weight": 0.35},  # Luleälven
+            {"name": "Norrland syd",  "lat": 63.5, "lon": 14.0, "weight": 0.35},  # Indalsälven
+            {"name": "Dalarna",       "lat": 61.0, "lon": 13.5, "weight": 0.30},  # Dalälven
+        ],
     }
-    
+
     variable = 'precipitation_sum'
     today_dt = datetime.today()
     today_str = today_dt.strftime("%Y-%m-%d")
     date_from = (today_dt - timedelta(days=14)).strftime("%Y-%m-%d")
-    date_to = (today_dt - timedelta(days=1)).strftime("%Y-%m-%d")
-    
+    date_to   = (today_dt - timedelta(days=1)).strftime("%Y-%m-%d")
+
     rows = []
-    for country, (lat, lon) in locations.items():
-        print(f"  {country}...")
-        hist_data = fetch_openmeteo_historical_daily_var(lat, lon, date_from, date_to, variable)
-        forecast_data = fetch_openmeteo_forecast_daily_var(lat, lon, variable, days=15)
-        
-        for date_str, precip in hist_data.items():
-            rows.append({
-                "country": country,
-                "date": date_str,
-                "precipitation_mm": precip,
-                "data_type": "historisk"
-            })
-        
-        for date_str, precip in forecast_data.items():
-            if date_str == today_str:
-                data_type = "i dag"
-            elif date_str > today_str:
-                data_type = "forecast"
-            else:
+
+    for country, points in measurement_points.items():
+        print(f"  {country} ({len(points)} målepunkter)...")
+
+        # Saml data per dato: {date_str: {"weighted_sum": float, "weight_sum": float}}
+        aggregated = {}
+
+        for point in points:
+            lat, lon, weight = point["lat"], point["lon"], point["weight"]
+            print(f"    - {point['name']} ({lat}, {lon})...")
+
+            hist_data     = fetch_openmeteo_historical_daily_var(lat, lon, date_from, date_to, variable)
+            forecast_data = fetch_openmeteo_forecast_daily_var(lat, lon, variable, days=15)
+
+            all_data = {}
+            for date_str, precip in hist_data.items():
+                all_data[date_str] = ("historisk", precip)
+            for date_str, precip in forecast_data.items():
+                if date_str == today_str:
+                    all_data[date_str] = ("i dag", precip)
+                elif date_str > today_str:
+                    all_data[date_str] = ("forecast", precip)
+
+            for date_str, (data_type, precip) in all_data.items():
+                if precip is None:
+                    continue
+                if date_str not in aggregated:
+                    aggregated[date_str] = {"weighted_sum": 0.0, "weight_sum": 0.0, "data_type": data_type}
+                aggregated[date_str]["weighted_sum"] += precip * weight
+                aggregated[date_str]["weight_sum"]   += weight
+
+        # Byg rækker fra vægtet gennemsnit
+        for date_str, agg in aggregated.items():
+            if agg["weight_sum"] == 0:
                 continue
+            weighted_avg = agg["weighted_sum"] / agg["weight_sum"]
             rows.append({
-                "country": country,
-                "date": date_str,
-                "precipitation_mm": precip,
-                "data_type": data_type
+                "country":          country,
+                "date":             date_str,
+                "precipitation_mm": round(weighted_avg, 2),
+                "data_type":        agg["data_type"],
             })
-    
+
     if rows:
         supabase.table("hydro_weather_forecast").upsert(rows, on_conflict="country,date").execute()
         print(f"Hydro-prognosedata gemt ({len(rows)} rækker).")
