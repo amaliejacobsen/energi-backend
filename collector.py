@@ -999,18 +999,13 @@ def collect_temperature_forecast_data():
             {"name": "Danmark", "lat": 56.0, "lon": 10.0, "weight": 1.0},
         ],
         "Norge": [
-            {"name": "Vestlandet",  "lat": 60.5, "lon": 7.0,  "weight": 0.30},
-            {"name": "Østlandet",   "lat": 61.5, "lon": 9.5,  "weight": 0.30},
-            {"name": "Midt-Norge",  "lat": 63.0, "lon": 9.0,  "weight": 0.25},
-            {"name": "Nord-Norge",  "lat": 67.0, "lon": 16.0, "weight": 0.15},
+            {"name": "Oslo", "lat": 59.9, "lon": 10.7, "weight": 1.0},
         ],
         "Sverige": [
-            {"name": "Norrland nord", "lat": 66.0, "lon": 17.0, "weight": 0.35},
-            {"name": "Norrland syd",  "lat": 63.5, "lon": 14.0, "weight": 0.35},
-            {"name": "Dalarna",       "lat": 61.0, "lon": 13.5, "weight": 0.30},
+            {"name": "Stockholm", "lat": 59.3, "lon": 18.1, "weight": 1.0},
         ],
         "Tyskland": [
-            {"name": "Tyskland", "lat": 51.5, "lon": 10.0, "weight": 1.0},
+            {"name": "Frankfurt", "lat": 50.1, "lon": 8.7, "weight": 1.0},
         ],
     }
 
