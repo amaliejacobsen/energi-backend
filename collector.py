@@ -843,9 +843,9 @@ def collect_dk_hourly_data():
         solar_dict = {}
         offshore_dict = {}
         onshore_dict = {}
+        consumption_dict = {}  # ← tilføj
         for rec in fetch_all_records("ProductionConsumptionSettlement", area):
             dt = datetime.fromisoformat(rec["HourDK"].replace('Z', '+00:00'))
-            # FJERNET: if is_too_recent(dt.year, dt.month): continue
             dt_iso = dt.isoformat()
             solar = (rec.get("SolarPowerLt10kW_MWh", 0) or 0) + \
                     (rec.get("SolarPowerGe10Lt40kW_MWh", 0) or 0) + \
@@ -854,11 +854,14 @@ def collect_dk_hourly_data():
                        (rec.get("OffshoreWindGe100MW_MWh", 0) or 0)
             onshore = (rec.get("OnshoreWindLt50kW_MWh", 0) or 0) + \
                       (rec.get("OnshoreWindGe50kW_MWh", 0) or 0)
-            solar_dict[dt_iso]   = {"area": area, "source": "solar",   "datetime": dt_iso, "value_mwh": solar}
-            offshore_dict[dt_iso] = {"area": area, "source": "offshore", "datetime": dt_iso, "value_mwh": offshore}
-            onshore_dict[dt_iso]  = {"area": area, "source": "onshore",  "datetime": dt_iso, "value_mwh": onshore}
+            consumption = rec.get("TotalLoad_MWh", 0) or 0  # ← tilføj
 
-        for source, d in [("solar", solar_dict), ("offshore", offshore_dict), ("onshore", onshore_dict)]:
+            solar_dict[dt_iso]       = {"area": area, "source": "solar",       "datetime": dt_iso, "value_mwh": solar}
+            offshore_dict[dt_iso]    = {"area": area, "source": "offshore",    "datetime": dt_iso, "value_mwh": offshore}
+            onshore_dict[dt_iso]     = {"area": area, "source": "onshore",     "datetime": dt_iso, "value_mwh": onshore}
+            consumption_dict[dt_iso] = {"area": area, "source": "consumption", "datetime": dt_iso, "value_mwh": consumption}  # ← tilføj
+
+        for source, d in [("solar", solar_dict), ("offshore", offshore_dict), ("onshore", onshore_dict), ("consumption", consumption_dict)]:  # ← tilføj consumption
             rows = list(d.values())
             if rows:
                 for i in range(0, len(rows), 1000):
