@@ -1069,4 +1069,4 @@ def collect_all():
     print(f"\nFærdig: {datetime.now()}\n{'='*40}")
 
 if __name__ == "__main__":
-    collect_all()
+    collect_all():
