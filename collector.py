@@ -1057,12 +1057,11 @@ def collect_temperature_forecast_data():
                 "data_type":       agg["data_type"],
             })
 
-   if rows:
+    if rows:
         supabase.table("temperature_forecast").upsert(rows, on_conflict="country,date").execute()
         print(f"Temperaturdata gemt ({len(rows)} rækker).")
     else:
         print("Ingen data opsamlet.")
-
 def collect_all():
     print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
     collect_dk_data()
