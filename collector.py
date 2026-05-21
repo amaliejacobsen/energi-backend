@@ -147,7 +147,7 @@ def collect_realtid_produktion():
             continue
         dt = datetime.fromisoformat(dt_str)
         hour_key = dt.replace(minute=0, second=0, microsecond=0).isoformat()
-    
+
         production_total = (
             (rec.get("ProductionGe100MW", 0) or 0) +
             (rec.get("ProductionLt100MW", 0) or 0) +
@@ -156,10 +156,10 @@ def collect_realtid_produktion():
             (rec.get("OnshoreWindPower", 0) or 0)
         )
         consumption_est = production_total - (rec.get("Exchange_Sum", 0) or 0)
-        hourly[hour_key]["consumption"].append(consumption_est)
-    
+
         if hour_key not in hourly:
             hourly[hour_key] = {"solar": [], "offshore": [], "onshore": [], "co2": [], "consumption": []}
+
         hourly[hour_key]["solar"].append(rec.get("SolarPower", 0) or 0)
         hourly[hour_key]["offshore"].append(rec.get("OffshoreWindPower", 0) or 0)
         hourly[hour_key]["onshore"].append(rec.get("OnshoreWindPower", 0) or 0)
