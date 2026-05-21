@@ -131,7 +131,6 @@ def fetch_all_records(dataset, area, start="2020-01-01"):
 def collect_realtid_produktion():
     print("Henter realtid produktion (PowerSystemRightNow)...")
     
-    # Hent de seneste 48 timer
     from_dt = (datetime.utcnow() - timedelta(hours=48)).strftime("%Y-%m-%dT%H:%M")
     
     r = requests.get("https://api.energidataservice.dk/dataset/PowerSystemRightNow",
@@ -140,23 +139,34 @@ def collect_realtid_produktion():
     r.raise_for_status()
     records = r.json().get("records", [])
     
-    rows = []
+    # Aggreger til timesniveau
+    hourly = {}
     for rec in records:
         dt_str = rec.get("Minutes1DK", "").replace("Z", "")
         if not dt_str:
             continue
+        dt = datetime.fromisoformat(dt_str)
+        hour_key = dt.replace(minute=0, second=0, microsecond=0).isoformat()
+        if hour_key not in hourly:
+            hourly[hour_key] = {"solar": [], "offshore": [], "onshore": [], "co2": []}
+        hourly[hour_key]["solar"].append(rec.get("SolarPower", 0) or 0)
+        hourly[hour_key]["offshore"].append(rec.get("OffshoreWindPower", 0) or 0)
+        hourly[hour_key]["onshore"].append(rec.get("OnshoreWindPower", 0) or 0)
+        hourly[hour_key]["co2"].append(rec.get("CO2Emission", 0) or 0)
+    
+    rows = []
+    for dt_str, vals in hourly.items():
         rows.append({
-            "datetime":  dt_str,
-            "solar":     rec.get("SolarPower", 0) or 0,
-            "offshore":  rec.get("OffshoreWindPower", 0) or 0,
-            "onshore":   rec.get("OnshoreWindPower", 0) or 0,
-            "co2":       rec.get("CO2Emission", 0) or 0,
+            "datetime": dt_str,
+            "solar":    sum(vals["solar"])    / len(vals["solar"]),
+            "offshore": sum(vals["offshore"]) / len(vals["offshore"]),
+            "onshore":  sum(vals["onshore"])  / len(vals["onshore"]),
+            "co2":      sum(vals["co2"])       / len(vals["co2"]),
         })
     
     if rows:
         supabase.table("dk_realtid").upsert(rows, on_conflict="datetime").execute()
         print(f"Realtid data gemt ({len(rows)} rækker).")
-
 
 def collect_dk_data():
     print("Henter DK data...")
