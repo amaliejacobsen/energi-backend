@@ -142,6 +142,8 @@ def collect_realtid_produktion():
     # Aggreger til timesniveau
     hourly = {}
     for rec in records:
+        print(rec.keys())
+        break
         dt_str = rec.get("Minutes1DK", "").replace("Z", "")
         if not dt_str:
             continue
@@ -1139,3 +1141,5 @@ def collect_all():
 
 if __name__ == "__main__":
     collect_all()
+
+
