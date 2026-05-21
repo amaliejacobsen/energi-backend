@@ -128,6 +128,36 @@ def fetch_all_records(dataset, area, start="2020-01-01"):
     return all_records
 
 
+def collect_realtid_produktion():
+    print("Henter realtid produktion (PowerSystemRightNow)...")
+    
+    # Hent de seneste 48 timer
+    from_dt = (datetime.utcnow() - timedelta(hours=48)).strftime("%Y-%m-%dT%H:%M")
+    
+    r = requests.get("https://api.energidataservice.dk/dataset/PowerSystemRightNow",
+                     params={"limit": 3000, "sort": "Minutes1DK asc",
+                             "start": from_dt}, timeout=60)
+    r.raise_for_status()
+    records = r.json().get("records", [])
+    
+    rows = []
+    for rec in records:
+        dt_str = rec.get("Minutes1DK", "").replace("Z", "")
+        if not dt_str:
+            continue
+        rows.append({
+            "datetime":  dt_str,
+            "solar":     rec.get("SolarPower", 0) or 0,
+            "offshore":  rec.get("OffshoreWindPower", 0) or 0,
+            "onshore":   rec.get("OnshoreWindPower", 0) or 0,
+            "co2":       rec.get("CO2Emission", 0) or 0,
+        })
+    
+    if rows:
+        supabase.table("dk_realtid").upsert(rows, on_conflict="datetime").execute()
+        print(f"Realtid data gemt ({len(rows)} rækker).")
+
+
 def collect_dk_data():
     print("Henter DK data...")
     hourly_prices = {area: {} for area in areas}
@@ -1080,14 +1110,8 @@ def collect_temperature_forecast_data():
         print("Ingen data opsamlet.")
 def collect_all():
     print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
-    collect_dk_hourly_data()
+    collect_realtid_produktion()
     print(f"\nFærdig: {datetime.now()}\n{'='*40}")
 
 if __name__ == "__main__":
     collect_all()
-
-if __name__ == "__main__":
-    r = requests.get("https://api.energidataservice.dk/dataset/PowerSystemRightNow", 
-                     params={"limit": 5}, timeout=30)
-    print(r.status_code)
-    print(r.text[:500])
