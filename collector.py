@@ -156,6 +156,7 @@ def collect_realtid_produktion():
             (rec.get("OnshoreWindPower", 0) or 0)
         )
         consumption_est = production_total - (rec.get("Exchange_Sum", 0) or 0)
+        hourly[hour_key]["consumption"].append(consumption_est)
     
         if hour_key not in hourly:
             hourly[hour_key] = {"solar": [], "offshore": [], "onshore": [], "co2": [], "consumption": []}
@@ -1133,7 +1134,7 @@ def collect_temperature_forecast_data():
 def collect_all():
     print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
     collect_realtid_produktion()
-    collect_dk_hourly_data():
+    collect_dk_hourly_data()
     print(f"\nFærdig: {datetime.now()}\n{'='*40}")
 
 if __name__ == "__main__":
