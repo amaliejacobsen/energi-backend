@@ -1125,3 +1125,11 @@ def collect_all():
 
 if __name__ == "__main__":
     collect_all()
+
+
+if __name__ == "__main__":
+    r = requests.get("https://api.energidataservice.dk/dataset/PowerSystemRightNow",
+                     params={"limit": 1}, timeout=30)
+    import json
+    rec = r.json()["records"][0]
+    print(json.dumps(rec, indent=2))
