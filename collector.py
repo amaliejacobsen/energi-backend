@@ -1085,3 +1085,9 @@ def collect_all():
 
 if __name__ == "__main__":
     collect_all()
+
+if __name__ == "__main__":
+    r = requests.get("https://api.energidataservice.dk/dataset/PowerSystemRightNow", 
+                     params={"limit": 5}, timeout=30)
+    print(r.status_code)
+    print(r.text[:500])
