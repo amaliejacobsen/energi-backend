@@ -839,29 +839,44 @@ def collect_dk_hourly_data():
                 ).execute()
             print(f"  {area} priser gemt ({len(price_rows)} rækker)")
 
-        # Produktion — brug dict per kilde for at undgå dubletter
+        # Produktion — historisk fra ProductionConsumptionSettlement
         solar_dict = {}
         offshore_dict = {}
         onshore_dict = {}
-        consumption_dict = {}  # ← tilføj
+        consumption_dict = {}
+
         for rec in fetch_all_records("ProductionConsumptionSettlement", area):
             dt = datetime.fromisoformat(rec["HourDK"].replace('Z', '+00:00'))
             dt_iso = dt.isoformat()
-            solar = (rec.get("SolarPowerLt10kW_MWh", 0) or 0) + \
-                    (rec.get("SolarPowerGe10Lt40kW_MWh", 0) or 0) + \
-                    (rec.get("SolarPowerGe40kW_MWh", 0) or 0)
+            solar    = (rec.get("SolarPowerLt10kW_MWh", 0) or 0) + \
+                       (rec.get("SolarPowerGe10Lt40kW_MWh", 0) or 0) + \
+                       (rec.get("SolarPowerGe40kW_MWh", 0) or 0)
             offshore = (rec.get("OffshoreWindLt100MW_MWh", 0) or 0) + \
                        (rec.get("OffshoreWindGe100MW_MWh", 0) or 0)
-            onshore = (rec.get("OnshoreWindLt50kW_MWh", 0) or 0) + \
-                      (rec.get("OnshoreWindGe50kW_MWh", 0) or 0)
-            consumption = rec.get("TotalLoad_MWh", 0) or 0  # ← tilføj
-
+            onshore  = (rec.get("OnshoreWindLt50kW_MWh", 0) or 0) + \
+                       (rec.get("OnshoreWindGe50kW_MWh", 0) or 0)
+            consumption = rec.get("TotalLoad_MWh", 0) or 0
             solar_dict[dt_iso]       = {"area": area, "source": "solar",       "datetime": dt_iso, "value_mwh": solar}
             offshore_dict[dt_iso]    = {"area": area, "source": "offshore",    "datetime": dt_iso, "value_mwh": offshore}
             onshore_dict[dt_iso]     = {"area": area, "source": "onshore",     "datetime": dt_iso, "value_mwh": onshore}
-            consumption_dict[dt_iso] = {"area": area, "source": "consumption", "datetime": dt_iso, "value_mwh": consumption}  # ← tilføj
+            consumption_dict[dt_iso] = {"area": area, "source": "consumption", "datetime": dt_iso, "value_mwh": consumption}
 
-        for source, d in [("solar", solar_dict), ("offshore", offshore_dict), ("onshore", onshore_dict), ("consumption", consumption_dict)]:  # ← tilføj consumption
+        # Produktion — nyere data fra ElectricityProdex (kortere forsinkelse)
+        for rec in fetch_all_records("ElectricityProdex", area):
+            dt = datetime.fromisoformat(rec["HourDK"].replace('Z', '+00:00'))
+            dt_iso = dt.isoformat()
+            solar    = rec.get("SolarMWh", 0) or 0
+            offshore = rec.get("OffshoreWindMWh", 0) or 0
+            onshore  = rec.get("OnshoreWindMWh", 0) or 0
+            # Udfyld kun hvis ikke allerede sat af settlement-data
+            if dt_iso not in solar_dict:
+                solar_dict[dt_iso]    = {"area": area, "source": "solar",    "datetime": dt_iso, "value_mwh": solar}
+            if dt_iso not in offshore_dict:
+                offshore_dict[dt_iso] = {"area": area, "source": "offshore", "datetime": dt_iso, "value_mwh": offshore}
+            if dt_iso not in onshore_dict:
+                onshore_dict[dt_iso]  = {"area": area, "source": "onshore",  "datetime": dt_iso, "value_mwh": onshore}
+
+        for source, d in [("solar", solar_dict), ("offshore", offshore_dict), ("onshore", onshore_dict), ("consumption", consumption_dict)]:
             rows = list(d.values())
             if rows:
                 for i in range(0, len(rows), 1000):
@@ -869,8 +884,6 @@ def collect_dk_hourly_data():
                         rows[i:i+1000], on_conflict="area,source,datetime"
                     ).execute()
                 print(f"  {area} {source} gemt ({len(rows)} rækker)")
-
-    print("DK timesdata gemt.")
 
 def fetch_openmeteo_historical_daily_var(lat, lon, date_from, date_to, variable, retries=3):
     url = "https://archive-api.open-meteo.com/v1/archive"
