@@ -131,7 +131,7 @@ def fetch_all_records(dataset, area, start="2020-01-01"):
 def collect_realtid_produktion():
     print("Henter realtid produktion (PowerSystemRightNow)...")
     
-    from_dt = (datetime.utcnow() - timedelta(hours=48)).strftime("%Y-%m-%dT%H:%M")
+    from_dt = (datetime.utcnow() - timedelta(hours=336)).strftime("%Y-%m-%dT%H:%M")
     
     r = requests.get("https://api.energidataservice.dk/dataset/PowerSystemRightNow",
                      params={"limit": 3000, "sort": "Minutes1DK asc",
