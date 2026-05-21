@@ -147,12 +147,23 @@ def collect_realtid_produktion():
             continue
         dt = datetime.fromisoformat(dt_str)
         hour_key = dt.replace(minute=0, second=0, microsecond=0).isoformat()
+    
+        production_total = (
+            (rec.get("ProductionGe100MW", 0) or 0) +
+            (rec.get("ProductionLt100MW", 0) or 0) +
+            (rec.get("SolarPower", 0) or 0) +
+            (rec.get("OffshoreWindPower", 0) or 0) +
+            (rec.get("OnshoreWindPower", 0) or 0)
+        )
+        consumption_est = production_total - (rec.get("Exchange_Sum", 0) or 0)
+    
         if hour_key not in hourly:
-            hourly[hour_key] = {"solar": [], "offshore": [], "onshore": [], "co2": []}
+            hourly[hour_key] = {"solar": [], "offshore": [], "onshore": [], "co2": [], "consumption": []}
         hourly[hour_key]["solar"].append(rec.get("SolarPower", 0) or 0)
         hourly[hour_key]["offshore"].append(rec.get("OffshoreWindPower", 0) or 0)
         hourly[hour_key]["onshore"].append(rec.get("OnshoreWindPower", 0) or 0)
         hourly[hour_key]["co2"].append(rec.get("CO2Emission", 0) or 0)
+        hourly[hour_key]["consumption"].append(consumption_est)
     
     rows = []
     for dt_str, vals in hourly.items():
@@ -162,6 +173,7 @@ def collect_realtid_produktion():
             "offshore": sum(vals["offshore"]) / len(vals["offshore"]),
             "onshore":  sum(vals["onshore"])  / len(vals["onshore"]),
             "co2":      sum(vals["co2"])       / len(vals["co2"]),
+            "consumption": sum(vals["consumption"]) / len(vals["consumption"]),
         })
     
     if rows:
