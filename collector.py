@@ -1229,10 +1229,16 @@ def collect_temperature_forecast_data():
 
 def collect_all():
     print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
+    
+    # Midlertidig test
+    r = requests.get("https://api.energidataservice.dk/dataset/ElectricityBalance",
+                     params={"limit": 10, "sort": "HourDK desc"}, timeout=60)
+    records = r.json().get("records", [])
+    if records:
+        print(records[0].keys())
+        print(records[0].get("HourDK"))
+    
     collect_realtid_produktion()
     print(f"\nFærdig: {datetime.now()}\n{'='*40}")
-
-if __name__ == "__main__":
-    collect_all()
 
 
