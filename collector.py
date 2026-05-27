@@ -92,11 +92,54 @@ def is_too_recent(year, month):
     return False
 
 
+def collect_dk_daily_production():
+    print("Henter daglig produktion...")
+    
+    for area in ["DK1", "DK2"]:
+        solar_dict = {}
+        offshore_dict = {}
+        onshore_dict = {}
+
+        for rec in fetch_all_records("ProductionConsumptionSettlement", area):
+            dt = datetime.fromisoformat(rec["HourDK"].replace('Z', '+00:00'))
+            date_str = dt.date().isoformat()
+            
+            solar = (rec.get("SolarPowerLt10kW_MWh", 0) or 0) + \
+                    (rec.get("SolarPowerGe10Lt40kW_MWh", 0) or 0) + \
+                    (rec.get("SolarPowerGe40kW_MWh", 0) or 0)
+            offshore = (rec.get("OffshoreWindLt100MW_MWh", 0) or 0) + \
+                       (rec.get("OffshoreWindGe100MW_MWh", 0) or 0)
+            onshore = (rec.get("OnshoreWindLt50kW_MWh", 0) or 0) + \
+                      (rec.get("OnshoreWindGe50kW_MWh", 0) or 0)
+
+            solar_dict[date_str]    = solar_dict.get(date_str, 0) + solar
+            offshore_dict[date_str] = offshore_dict.get(date_str, 0) + offshore
+            onshore_dict[date_str]  = onshore_dict.get(date_str, 0) + onshore
+
+        rows = []
+        for source, d in [("solar", solar_dict), ("offshore", offshore_dict), ("onshore", onshore_dict)]:
+            for date_str, val in d.items():
+                rows.append({
+                    "area": area,
+                    "source": source,
+                    "date": date_str,
+                    "value_mwh": val
+                })
+
+        if rows:
+            for i in range(0, len(rows), 1000):
+                supabase.table("dk_production_daily").upsert(
+                    rows[i:i+1000], on_conflict="area,source,date"
+                ).execute()
+            print(f"  {area} daglig produktion gemt ({len(rows)} rækker)")
+            
+
+
 def collect_realtid_monthly():
     print("Aggregerer realtid til månedsniveau...")
     
     # Hent alle realtid-data for den nuværende måned
-    from_dt = datetime(current_year, current_month, 1).isoformat()
+    from_dt = datetime(current_year, current_month, 1).strftime("%Y-%m-%dT%H:%M")
     
     r = requests.get("https://api.energidataservice.dk/dataset/PowerSystemRightNow",
                      params={"limit": 50000, "sort": "Minutes1DK asc",
@@ -1184,9 +1227,8 @@ def collect_temperature_forecast_data():
 
 def collect_all():
     print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
-    collect_realtid_produktion()
-    collect_dk_hourly_data()
     collect_realtid_monthly()
+    collect_dk_daily_production()
     print(f"\nFærdig: {datetime.now()}\n{'='*40}")
 
 if __name__ == "__main__":
