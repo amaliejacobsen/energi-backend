@@ -81,6 +81,8 @@ def monthly_weighted(price_dict, prod_dict):
         for month in monthly_prod
     }
 
+
+
 def is_too_recent(year, month):
     # Tillad data frem til og med den nuværende måned
     if year > current_year:
@@ -88,6 +90,48 @@ def is_too_recent(year, month):
     if year == current_year and month > current_month:
         return True
     return False
+
+
+def collect_realtid_monthly():
+    print("Aggregerer realtid til månedsniveau...")
+    
+    # Hent alle realtid-data for den nuværende måned
+    from_dt = datetime(current_year, current_month, 1).isoformat()
+    
+    r = requests.get("https://api.energidataservice.dk/dataset/PowerSystemRightNow",
+                     params={"limit": 50000, "sort": "Minutes1DK asc",
+                             "start": from_dt}, timeout=60)
+    r.raise_for_status()
+    records = r.json().get("records", [])
+    
+    # Aggreger til månedsniveau
+    solar_total = []
+    offshore_total = []
+    onshore_total = []
+    
+    for rec in records:
+        solar_total.append(rec.get("SolarPower", 0) or 0)
+        offshore_total.append(rec.get("OffshoreWindPower", 0) or 0)
+        onshore_total.append(rec.get("OnshoreWindPower", 0) or 0)
+    
+    if not solar_total:
+        print("Ingen realtid data fundet.")
+        return
+    
+    rows = []
+    for source, vals in [("solar", solar_total), ("offshore", offshore_total), ("onshore", onshore_total)]:
+        rows.append({
+            "area": "DK",
+            "source": source,
+            "year": current_year,
+            "month": current_month,
+            "value_mwh": sum(vals) / 4  # kvartersdata → MWh (÷4 for at konvertere fra MW)
+        })
+    
+    if rows:
+        supabase.table("dk_production").upsert(rows, on_conflict="area,source,year,month").execute()
+        print(f"Realtid månedsniveau gemt ({current_year}-{current_month}).")
+
 
 def fetch_all_records(dataset, area, start="2020-01-01"):
     all_records = []
@@ -182,6 +226,8 @@ def collect_realtid_produktion():
     if rows:
         supabase.table("dk_realtid").upsert(rows, on_conflict="datetime").execute()
         print(f"Realtid data gemt ({len(rows)} rækker).")
+
+
 
 def collect_dk_data():
     print("Henter DK data...")
@@ -1133,16 +1179,17 @@ def collect_temperature_forecast_data():
         print(f"Temperaturdata gemt ({len(rows)} rækker).")
     else:
         print("Ingen data opsamlet.")
+
+
+
 def collect_all():
     print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
     collect_realtid_produktion()
     collect_dk_hourly_data()
+    collect_realtid_monthly()
     print(f"\nFærdig: {datetime.now()}\n{'='*40}")
 
 if __name__ == "__main__":
     collect_all()
 
-for rec in fetch_all_records("ElectricityProdex", area):
-    print(rec.get("HourDK"))
-    break
 
