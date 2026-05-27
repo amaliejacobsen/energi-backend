@@ -2,8 +2,9 @@ name: Collect Data
 
 on:
   schedule:
-    - cron: '0 3 15 * *'  # Kører kl. 3 den 15. hver måned
-  workflow_dispatch:        # Kan køres manuelt
+    - cron: '0 6 * * *'   # Kører hver dag kl. 6
+    - cron: '0 12 * * *'  # Kører hver dag kl. 12
+  workflow_dispatch:
 
 jobs:
   collect:
