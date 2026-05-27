@@ -1227,8 +1227,7 @@ def collect_temperature_forecast_data():
 
 def collect_all():
     print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
-    collect_realtid_monthly()
-    collect_dk_daily_production()
+    collect_realtid_produktion()
     print(f"\nFærdig: {datetime.now()}\n{'='*40}")
 
 if __name__ == "__main__":
