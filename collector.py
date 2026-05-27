@@ -1241,4 +1241,7 @@ def collect_all():
     collect_realtid_produktion()
     print(f"\nFærdig: {datetime.now()}\n{'='*40}")
 
+if __name__ == "__main__":
+    collect_all()
+
 
