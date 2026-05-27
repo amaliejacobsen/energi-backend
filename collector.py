@@ -146,6 +146,11 @@ def collect_realtid_monthly():
                              "start": from_dt}, timeout=60)
     r.raise_for_status()
     records = r.json().get("records", [])
+    records = r.json().get("records", [])
+    if records:
+        print(f"Første: {records[0].get('Minutes1DK')}")
+        print(f"Sidste: {records[-1].get('Minutes1DK')}")
+        print(f"Antal: {len(records)}")
     
     # Aggreger til månedsniveau
     solar_total = []
