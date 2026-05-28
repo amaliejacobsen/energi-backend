@@ -202,8 +202,7 @@ def collect_dk_daily_production():
                 dt = datetime.fromisoformat(rec["datetime"])
                 date_str = dt.date().isoformat()
                 if date_str not in source_dict:
-                    source_dict[date_str] = 0
-                source_dict[date_str] += rec["value_mwh"]
+                    source_dict[date_str] = val / 4
 
         # Udfyld de nyeste dage med realtid-data
         realtid_result = supabase.from_("dk_realtid").select("*").execute()
