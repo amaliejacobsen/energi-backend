@@ -142,22 +142,6 @@ def collect_dk_daily_production():
                 ).execute()
             print(f"  {area} daglig produktion gemt ({len(rows)} rækker)") 
 
-# Udfyld de nyeste dage med realtid-data
-        realtid_result = supabase.from_("dk_realtid").select("*").execute()
-        for rec in realtid_result.data or []:
-            dt = datetime.fromisoformat(rec["datetime"])
-            date_str = dt.date().isoformat()
-            for source_name, source_dict, field in [
-                ("solar", solar_dict, "solar"),
-                ("offshore", offshore_dict, "offshore"),
-                ("onshore", onshore_dict, "onshore"),
-            ]:
-                val = rec.get(field, 0) or 0
-                if date_str not in source_dict:
-                    source_dict[date_str] = 0
-                source_dict[date_str] += val / 4  # kvartersdata → MWh
-
-        rows = []
 
 
 def collect_realtid_monthly():
@@ -1261,17 +1245,7 @@ def collect_temperature_forecast_data():
 
 def collect_all():
     print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
-    collect_dk_hourly_data()
-    collect_dk_data()
-    collect_realtid_monthly()
-    collect_dk_daily_production()
-    collect_hydro_data()
-    collect_nuclear_data()
-    collect_capacity_data()
-    collect_consumption_data()
-    collect_gas_data()
-    collect_hydro_forecast_data()
-    collect_temperature_forecast_data()
+    collect_realtid_produktion()
     print(f"\nFærdig: {datetime.now()}\n{'='*40}")
 
 if __name__ == "__main__":
