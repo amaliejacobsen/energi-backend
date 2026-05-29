@@ -1229,10 +1229,8 @@ def collect_realtid_dk_hourly():
 
 def collect_all():
     print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
-    collect_realtid_dk_hourly()   # 1. Realtid sol/vind (DK1/DK2) — hurtigt, ingen forsinkelse
-    collect_dk_hourly_data()      # 2. Settlement overskriver med valideret data
-    collect_realtid_monthly()     # 3. Månedsniveau (DK samlet)
-    collect_dk_daily_production() # 4. Daglig produktion
+    collect_realtid_dk_hourly()
+    collect_dk_hourly_data()
     print(f"\nFærdig: {datetime.now()}\n{'='*40}")
     
 if __name__ == "__main__":
