@@ -17,7 +17,7 @@ AGSI_KEY        = os.environ.get("AGSI_KEY", "12a5ed2eb1b9d3f2091abd2213758ec2")
 AGSI_URL        = "https://agsi.gie.eu/api"
 
 current_date    = datetime.today()
-end             = current_date.strftime("%Y-%m-%d")
+end             = (current_date + timedelta(days=1)).strftime("%Y-%m-%d")
 current_year    = current_date.year
 current_month   = current_date.month
 current_day     = current_date.day
@@ -202,22 +202,8 @@ def collect_dk_daily_production():
                 dt = datetime.fromisoformat(rec["datetime"])
                 date_str = dt.date().isoformat()
                 if date_str not in source_dict:
-                    source_dict[date_str] = val / 4
+                    source_dict[date_str] = rec["value_mwh"]
 
-        # Udfyld de nyeste dage med realtid-data
-        realtid_result = supabase.from_("dk_realtid").select("*").execute()
-        for rec in realtid_result.data or []:
-            dt = datetime.fromisoformat(rec["datetime"])
-            date_str = dt.date().isoformat()
-            for source_name, source_dict, field in [
-                ("solar", solar_dict, "solar"),
-                ("offshore", offshore_dict, "offshore"),
-                ("onshore", onshore_dict, "onshore"),
-            ]:
-                val = rec.get(field, 0) or 0
-                if date_str not in source_dict:
-                    source_dict[date_str] = 0
-                source_dict[date_str] += val / 4  # kvartersdata → MWh
 
         rows = []
         for source, d in [("solar", solar_dict), ("offshore", offshore_dict), ("onshore", onshore_dict)]:
@@ -970,20 +956,6 @@ def collect_dk_hourly_data():
             onshore_dict[dt_iso]     = {"area": area, "source": "onshore",     "datetime": dt_iso, "value_mwh": onshore}
             consumption_dict[dt_iso] = {"area": area, "source": "consumption", "datetime": dt_iso, "value_mwh": consumption}
 
-        # Produktion — nyere data fra ElectricityProdex (kortere forsinkelse)
-        for rec in fetch_all_records("ElectricityProdex", area):
-            dt = datetime.fromisoformat(rec["HourDK"].replace('Z', '+00:00'))
-            dt_iso = dt.isoformat()
-            solar    = rec.get("SolarMWh", 0) or 0
-            offshore = rec.get("OffshoreWindMWh", 0) or 0
-            onshore  = rec.get("OnshoreWindMWh", 0) or 0
-            # Udfyld kun hvis ikke allerede sat af settlement-data
-            if dt_iso not in solar_dict:
-                solar_dict[dt_iso]    = {"area": area, "source": "solar",    "datetime": dt_iso, "value_mwh": solar}
-            if dt_iso not in offshore_dict:
-                offshore_dict[dt_iso] = {"area": area, "source": "offshore", "datetime": dt_iso, "value_mwh": offshore}
-            if dt_iso not in onshore_dict:
-                onshore_dict[dt_iso]  = {"area": area, "source": "onshore",  "datetime": dt_iso, "value_mwh": onshore}
 
         for source, d in [("solar", solar_dict), ("offshore", offshore_dict), ("onshore", onshore_dict), ("consumption", consumption_dict)]:
             rows = list(d.values())
@@ -1189,71 +1161,80 @@ def collect_temperature_forecast_data():
         print("Ingen data opsamlet.")
 
 
-def collect_realtid_produktion():
-    print("Henter realtid produktion (PowerSystemRightNow)...")
+def collect_realtid_dk_hourly():
+    print("Henter ElectricityProdex5MinRealtime...")
     
-    from_dt = (datetime.utcnow() - timedelta(hours=336)).strftime("%Y-%m-%dT%H:%M")
+    from_dt = (datetime.utcnow() - timedelta(hours=48)).strftime("%Y-%m-%dT%H:%M")
     
-    r = requests.get("https://api.energidataservice.dk/dataset/PowerSystemRightNow",
-                     params={"limit": 3000, "sort": "Minutes1DK asc",
-                             "start": from_dt}, timeout=60)
-    r.raise_for_status()
-    records = r.json().get("records", [])
-    if records:
-        print(f"Første: {records[0].get('Minutes1DK')}")
-        print(f"Sidste: {records[-1].get('Minutes1DK')}")
-        print(f"Antal: {len(records)}")
+    rows_per_area = {"DK1": {}, "DK2": {}}
+    
+    for area in ["DK1", "DK2"]:
+        offset = 0
+        while True:
+            r = requests.get(
+                "https://api.energidataservice.dk/dataset/ElectricityProdex5MinRealtime",
+                params={
+                    "filter": f'{{"PriceArea":"{area}"}}',
+                    "start": from_dt,
+                    "limit": 1000,
+                    "offset": offset,
+                    "sort": "Minutes5UTC asc",
+                },
+                timeout=30
+            )
+            r.raise_for_status()
+            records = r.json().get("records", [])
+            if not records:
+                break
+            
+            for rec in records:
+                dt_str = rec["Minutes5DK"].replace("Z", "")
+                dt = datetime.fromisoformat(dt_str)
+                # Aggreger til heltimer
+                hour_key = dt.replace(minute=0, second=0, microsecond=0).isoformat()
+                
+                if hour_key not in rows_per_area[area]:
+                    rows_per_area[area][hour_key] = {
+                        "solar": [], "offshore": [], "onshore": []
+                    }
+                rows_per_area[area][hour_key]["solar"].append(rec.get("SolarPower", 0) or 0)
+                rows_per_area[area][hour_key]["offshore"].append(rec.get("OffshoreWindPower", 0) or 0)
+                rows_per_area[area][hour_key]["onshore"].append(rec.get("OnshoreWindPower", 0) or 0)
+            
+            if len(records) < 1000:
+                break
+            offset += 1000
+
+    # Gem i dk_production_hourly — kun hvis ikke allerede dækket af settlement
+    for area, hours in rows_per_area.items():
+        rows = []
+        for hour_key, vals in hours.items():
+            for source, field in [("solar", "solar"), ("offshore", "offshore"), ("onshore", "onshore")]:
+                avg = sum(vals[field]) / len(vals[field]) if vals[field] else None
+                if avg is not None:
+                    rows.append({
+                        "area": area,
+                        "source": source,
+                        "datetime": hour_key,
+                        "value_mwh": round(avg, 3),
+                    })
         
-    hourly = {}
-    for rec in records:
-        dt_str = rec.get("Minutes1DK", "").replace("Z", "")
-        if not dt_str:
-            continue
-        dt = datetime.fromisoformat(dt_str)
-        hour_key = dt.replace(minute=0, second=0, microsecond=0).isoformat()
-
-        if hour_key not in hourly:
-            hourly[hour_key] = {"solar": [], "offshore": [], "onshore": [], "co2": [], "consumption": []}
-
-        production_total = (
-            (rec.get("ProductionGe100MW", 0) or 0) +
-            (rec.get("ProductionLt100MW", 0) or 0) +
-            (rec.get("SolarPower", 0) or 0) +
-            (rec.get("OffshoreWindPower", 0) or 0) +
-            (rec.get("OnshoreWindPower", 0) or 0)
-        )
-        consumption_est = production_total - (rec.get("Exchange_Sum", 0) or 0)
-
-        hourly[hour_key]["solar"].append(rec.get("SolarPower", 0) or 0)
-        hourly[hour_key]["offshore"].append(rec.get("OffshoreWindPower", 0) or 0)
-        hourly[hour_key]["onshore"].append(rec.get("OnshoreWindPower", 0) or 0)
-        hourly[hour_key]["co2"].append(rec.get("CO2Emission", 0) or 0)
-        hourly[hour_key]["consumption"].append(consumption_est)
-    
-    rows = []
-    for dt_str, vals in hourly.items():
-        rows.append({
-            "datetime": dt_str,
-            "solar":    sum(vals["solar"])    / len(vals["solar"]),
-            "offshore": sum(vals["offshore"]) / len(vals["offshore"]),
-            "onshore":  sum(vals["onshore"])  / len(vals["onshore"]),
-            "co2":      sum(vals["co2"])       / len(vals["co2"]),
-            "consumption": sum(vals["consumption"]) / len(vals["consumption"]),
-        })
-    
-    if rows:
-        supabase.table("dk_realtid").upsert(rows, on_conflict="datetime").execute()
-        print(f"Realtid data gemt ({len(rows)} rækker).")
-
+        if rows:
+            for i in range(0, len(rows), 1000):
+                supabase.table("dk_production_hourly").upsert(
+                    rows[i:i+1000],
+                    on_conflict="area,source,datetime"
+                ).execute()
+            print(f"  {area} realtid gemt ({len(rows)} rækker)")
 
 def collect_all():
     print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
-    collect_realtid_produktion()
-    collect_dk_hourly_data()
-    collect_realtid_monthly()
-    collect_dk_daily_production()
+    collect_realtid_dk_hourly()   # 1. Realtid sol/vind (DK1/DK2) — hurtigt, ingen forsinkelse
+    collect_dk_hourly_data()      # 2. Settlement overskriver med valideret data
+    collect_realtid_monthly()     # 3. Månedsniveau (DK samlet)
+    collect_dk_daily_production() # 4. Daglig produktion
     print(f"\nFærdig: {datetime.now()}\n{'='*40}")
-
+    
 if __name__ == "__main__":
     collect_all()
 
