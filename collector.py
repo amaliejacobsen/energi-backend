@@ -1268,7 +1268,6 @@ def collect_realtid_dk_hourly():
 def collect_all():
     print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
     collect_nuclear_data()
-    fetch_sweden_nuclear_daily():
     print(f"\nFærdig: {datetime.now()}\n{'='*40}")
     
 if __name__ == "__main__":
