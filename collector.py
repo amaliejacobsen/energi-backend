@@ -1238,8 +1238,6 @@ def collect_realtid_dk_hourly():
                 
                 dt_str = rec["Minutes5DK"].replace("Z", "")
                 rows_per_area[area][dt_str] = {
-                dt_str = rec["Minutes5DK"].replace("Z", "")
-                rows_per_area[area][dt_str] = {
                     "solar":       rec.get("SolarPower", 0) or 0,
                     "offshore":    rec.get("OffshoreWindPower", 0) or 0,
                     "onshore":     rec.get("OnshoreWindPower", 0) or 0,
