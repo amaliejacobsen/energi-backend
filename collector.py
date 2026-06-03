@@ -16,6 +16,8 @@ ENTSOE_URL      = "https://web-api.tp.entsoe.eu/api"
 AGSI_KEY        = os.environ.get("AGSI_KEY", "12a5ed2eb1b9d3f2091abd2213758ec2")
 AGSI_URL        = "https://agsi.gie.eu/api"
 
+NUCLEAR_URL     = "https://syspower5.skm.no/api/webquery/execute?fileformat=iqy&series=PROFRNUC_ENTSOE,PROSENUC_PS,PROFINUC&start=d-1&end=d&interval=day&token=LIPhyBZjn63NJ7n3&emptydata=no&currency=&dateFormat=nbno&numberFormat=nothousandsdot&headers=yes"
+
 current_date    = datetime.today()
 end             = (current_date + timedelta(days=1)).strftime("%Y-%m-%d")
 current_year    = current_date.year
@@ -425,9 +427,39 @@ def fetch_nuclear_monthly(eic_code, year, token):
         time.sleep(1)
     return dict(monthly)
 
+def fetch_sweden_nuclear_daily():
+    """Henter svensk atomkraftproduktion fra SYSpower (daglig, MWh)."""
+    url = NUCLEAR_URL.replace("fileformat=iqy", "fileformat=html")
+    r = requests.get(url, timeout=30)
+    r.raise_for_status()
+    
+    rows = []
+    for line in r.text.splitlines():
+        # Find tabelrækker med dato-data
+        cells = [c.strip() for c in line.split("|") if c.strip()]
+        if len(cells) < 3:
+            continue
+        try:
+            # Dato er DD.MM.YYYY format
+            date = datetime.strptime(cells[0], "%d.%m.%Y")
+            sweden_mwh = float(cells[2].replace(",", "."))
+        except (ValueError, IndexError):
+            continue
+        
+        rows.append({
+            "country": "Sverige",
+            "year": date.year,
+            "month": date.month,
+            "value_mwh": sweden_mwh,
+        })
+    
+    return rows
+
 def collect_nuclear_data():
     print("Henter nuclear data...")
     rows = []
+    
+    # Finland og Frankrig via ENTSO-E
     for country, eic in NUCLEAR_COUNTRIES.items():
         for year in fetch_years:
             print(f"  {country} {year}...")
@@ -441,6 +473,12 @@ def collect_nuclear_data():
                     "month": month,
                     "value_mwh": val
                 })
+    
+    # Sverige via SYSpower
+    print("  Sverige (SYSpower)...")
+    sweden_rows = fetch_sweden_nuclear_daily()
+    rows.extend(sweden_rows)
+    
     if rows:
         supabase.table("nuclear_production").upsert(rows, on_conflict="country,year,month").execute()
         print(f"Nuclear data gemt ({len(rows)} rækker).")
@@ -1229,8 +1267,8 @@ def collect_realtid_dk_hourly():
 
 def collect_all():
     print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
-    collect_realtid_dk_hourly()
-    collect_dk_hourly_data()
+    collect_nuclear_data()
+    fetch_sweden_nuclear_daily():
     print(f"\nFærdig: {datetime.now()}\n{'='*40}")
     
 if __name__ == "__main__":
