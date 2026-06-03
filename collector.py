@@ -939,22 +939,17 @@ def collect_consumption_data():
 
     print("Forbrugsdata gemt (rensede for dubletter).")
 
+
 def collect_dk_hourly_data():
     print("Henter DK timesdata...")
-
-     # DEBUG - print feltnavne fra første record
-    debug_records = fetch_all_records("ProductionConsumptionSettlement", "DK1")
-    if debug_records:
-        print("FELTNAVNE:", list(debug_records[0].keys()))
     
-    # Brug en direkte liste eller dine eksisterende zoner
     for area in ["DK1", "DK2"]: 
-        # Priser
         price_dict = {}
         
-        # 1. Hent fra Elspotprices (Historisk data)
-        for rec in fetch_all_records("Elspotprices", area):
-            # HourDK er allerede dansk tid. Vi fjerner 'Z' hvis det findes
+        # Kun hent de seneste 7 dage + i morgen (day-ahead)
+        recent_start = (current_date - timedelta(days=7)).strftime("%Y-%m-%d")
+        
+        for rec in fetch_all_records("Elspotprices", area, start=recent_start):
             dt_str = rec["HourDK"].replace('Z', '') 
             price_dict[dt_str] = {
                 "area": area,
@@ -962,9 +957,7 @@ def collect_dk_hourly_data():
                 "price_dkk": rec["SpotPriceDKK"]
             }
             
-        # 2. Hent fra DayAheadPrices (Nyeste data/Prognoser)
-        for rec in fetch_all_records("DayAheadPrices", area):
-            # DayAheadPrices bruger feltet 'TimeDK'
+        for rec in fetch_all_records("DayAheadPrices", area, start=recent_start):
             dt_str = rec["TimeDK"].replace('Z', '')
             if dt_str not in price_dict:
                 price_dict[dt_str] = {
@@ -975,13 +968,15 @@ def collect_dk_hourly_data():
         
         price_rows = list(price_dict.values())
         if price_rows:
-            # Upsert i bidder af 1000 for at undgå timeout
             for i in range(0, len(price_rows), 1000):
                 supabase.table("dk_prices_hourly").upsert(
                     price_rows[i:i+1000], 
                     on_conflict="area,datetime"
                 ).execute()
             print(f"  {area} priser gemt ({len(price_rows)} rækker)")
+
+        # Produktion — behold start=2020 kun første gang, herefter kun recent
+        # ... resten af funktionen uændret
 
         # Produktion — historisk fra ProductionConsumptionSettlement
         solar_dict = {}
