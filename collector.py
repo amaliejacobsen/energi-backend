@@ -1232,9 +1232,6 @@ def collect_realtid_dk_hourly():
                 break
             
             for rec in records:
-                # DEBUG - kun første record
-                if not rows_per_area[area]:
-                    print("5MIN FELTER:", list(rec.keys()))
                 
                 dt_str = rec["Minutes5DK"].replace("Z", "")
                 rows_per_area[area][dt_str] = {
@@ -1270,8 +1267,8 @@ def collect_realtid_dk_hourly():
 
 def collect_all():
     print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
-    collect_realtid_dk_hourly()
-    collect_dk_hourly_data()
+    collect_hydro_forecast_data()
+    collect_temperature_forecast_data()
     print(f"\nFærdig: {datetime.now()}\n{'='*40}")
     
 if __name__ == "__main__":
