@@ -1232,6 +1232,12 @@ def collect_realtid_dk_hourly():
                 break
             
             for rec in records:
+                # DEBUG - kun første record
+                if not rows_per_area[area]:
+                    print("5MIN FELTER:", list(rec.keys()))
+                
+                dt_str = rec["Minutes5DK"].replace("Z", "")
+                rows_per_area[area][dt_str] = {
                 dt_str = rec["Minutes5DK"].replace("Z", "")
                 rows_per_area[area][dt_str] = {
                     "solar":       rec.get("SolarPower", 0) or 0,
