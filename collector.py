@@ -196,15 +196,21 @@ def collect_dk_daily_production():
             offshore_dict[date_str] = offshore_dict.get(date_str, 0) + offshore
             onshore_dict[date_str]  = onshore_dict.get(date_str, 0) + onshore
 
-        # Udfyld huller med data fra dk_production_hourly
+        # Udfyld huller med data fra dk_production_hourly (5-min data aggregeret til dage)
         for source_name, source_dict in [("solar", solar_dict), ("offshore", offshore_dict), ("onshore", onshore_dict)]:
             result = supabase.from_("dk_production_hourly").select("*") \
                 .eq("area", area).eq("source", source_name).execute()
+            
+            # Aggreger 5-min værdier til daglige summer
+            daily_from_5min = defaultdict(float)
             for rec in result.data or []:
                 dt = datetime.fromisoformat(rec["datetime"])
                 date_str = dt.date().isoformat()
+                daily_from_5min[date_str] += rec["value_mwh"] * (5/60)  # MW * 5min → MWh
+            
+            for date_str, val in daily_from_5min.items():
                 if date_str not in source_dict:
-                    source_dict[date_str] = rec["value_mwh"]
+                    source_dict[date_str] = val
 
 
         rows = []
@@ -1227,36 +1233,28 @@ def collect_realtid_dk_hourly():
             
             for rec in records:
                 dt_str = rec["Minutes5DK"].replace("Z", "")
-                dt = datetime.fromisoformat(dt_str)
-                # Aggreger til heltimer
-                hour_key = dt.replace(minute=0, second=0, microsecond=0).isoformat()
-                
-                if hour_key not in rows_per_area[area]:
-                    rows_per_area[area][hour_key] = {
-                        "solar": [], "offshore": [], "onshore": [], "consumption": []  # ← tilføj "consumption": []
-                    }
-                rows_per_area[area][hour_key]["solar"].append(rec.get("SolarPower", 0) or 0)
-                rows_per_area[area][hour_key]["offshore"].append(rec.get("OffshoreWindPower", 0) or 0)
-                rows_per_area[area][hour_key]["onshore"].append(rec.get("OnshoreWindPower", 0) or 0)
-                rows_per_area[area][hour_key]["consumption"].append(rec.get("TotalLoad", 0) or 0)  # ← tilføj denne linje
+                rows_per_area[area][dt_str] = {
+                    "solar":       rec.get("SolarPower", 0) or 0,
+                    "offshore":    rec.get("OffshoreWindPower", 0) or 0,
+                    "onshore":     rec.get("OnshoreWindPower", 0) or 0,
+                    "consumption": rec.get("TotalLoad", 0) or 0,
+                }
             
             if len(records) < 1000:
                 break
             offset += 1000
 
     # Gem i dk_production_hourly — kun hvis ikke allerede dækket af settlement
-    for area, hours in rows_per_area.items():
+    for area, timepoints in rows_per_area.items():
         rows = []
-        for hour_key, vals in hours.items():
-            for source, field in [("solar", "solar"), ("offshore", "offshore"), ("onshore", "onshore"),  ("consumption", "consumption"),]:
-                avg = sum(vals[field]) / len(vals[field]) if vals[field] else None
-                if avg is not None:
-                    rows.append({
-                        "area": area,
-                        "source": source,
-                        "datetime": hour_key,
-                        "value_mwh": round(avg, 3),
-                    })
+        for dt_str, vals in timepoints.items():
+            for source in ["solar", "offshore", "onshore", "consumption"]:
+                rows.append({
+                    "area": area,
+                    "source": source,
+                    "datetime": dt_str,
+                    "value_mwh": round(vals[source], 3),
+                })
         
         if rows:
             for i in range(0, len(rows), 1000):
@@ -1268,7 +1266,8 @@ def collect_realtid_dk_hourly():
 
 def collect_all():
     print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
-    collect_nuclear_data()
+    collect_realtid_dk_hourly()
+    collect_dk_hourly_data()
     print(f"\nFærdig: {datetime.now()}\n{'='*40}")
     
 if __name__ == "__main__":
