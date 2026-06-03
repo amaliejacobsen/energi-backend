@@ -988,7 +988,7 @@ def collect_dk_hourly_data():
                        (rec.get("OffshoreWindGe100MW_MWh", 0) or 0)
             onshore  = (rec.get("OnshoreWindLt50kW_MWh", 0) or 0) + \
                        (rec.get("OnshoreWindGe50kW_MWh", 0) or 0)
-            consumption = rec.get("TotalLoad_MWh", 0) or 0
+            consumption = rec.get("GrossConsumption_MWh", 0) or 0
             solar_dict[dt_iso]       = {"area": area, "source": "solar",       "datetime": dt_iso, "value_mwh": solar}
             offshore_dict[dt_iso]    = {"area": area, "source": "offshore",    "datetime": dt_iso, "value_mwh": offshore}
             onshore_dict[dt_iso]     = {"area": area, "source": "onshore",     "datetime": dt_iso, "value_mwh": onshore}
@@ -1233,11 +1233,12 @@ def collect_realtid_dk_hourly():
                 
                 if hour_key not in rows_per_area[area]:
                     rows_per_area[area][hour_key] = {
-                        "solar": [], "offshore": [], "onshore": []
+                        "solar": [], "offshore": [], "onshore": [], "consumption": []  # ← tilføj "consumption": []
                     }
                 rows_per_area[area][hour_key]["solar"].append(rec.get("SolarPower", 0) or 0)
                 rows_per_area[area][hour_key]["offshore"].append(rec.get("OffshoreWindPower", 0) or 0)
                 rows_per_area[area][hour_key]["onshore"].append(rec.get("OnshoreWindPower", 0) or 0)
+                rows_per_area[area][hour_key]["consumption"].append(rec.get("TotalLoad", 0) or 0)  # ← tilføj denne linje
             
             if len(records) < 1000:
                 break
@@ -1247,7 +1248,7 @@ def collect_realtid_dk_hourly():
     for area, hours in rows_per_area.items():
         rows = []
         for hour_key, vals in hours.items():
-            for source, field in [("solar", "solar"), ("offshore", "offshore"), ("onshore", "onshore")]:
+            for source, field in [("solar", "solar"), ("offshore", "offshore"), ("onshore", "onshore"),  ("consumption", "consumption"),]:
                 avg = sum(vals[field]) / len(vals[field]) if vals[field] else None
                 if avg is not None:
                     rows.append({
