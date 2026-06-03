@@ -941,6 +941,11 @@ def collect_consumption_data():
 
 def collect_dk_hourly_data():
     print("Henter DK timesdata...")
+
+     # DEBUG - print feltnavne fra første record
+    debug_records = fetch_all_records("ProductionConsumptionSettlement", "DK1")
+    if debug_records:
+        print("FELTNAVNE:", list(debug_records[0].keys()))
     
     # Brug en direkte liste eller dine eksisterende zoner
     for area in ["DK1", "DK2"]: 
