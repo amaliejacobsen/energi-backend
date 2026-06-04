@@ -1,7 +1,7 @@
 name: Realtime collector
 on:
   schedule:
-    - cron: '0 * * * *'  # én gang i timen
+    - cron: '*/15 * * * *'  # hvert 15. minut
   workflow_dispatch:
 jobs:
   collect:
