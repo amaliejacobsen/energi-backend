@@ -12,7 +12,7 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install requests supabase
-      - run: python collector_realtime.py
+      - run: python test_api.py
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
