@@ -23,13 +23,13 @@ def collect_realtid_dk_hourly():
             for attempt in range(10):
                 try:
                     r = requests.get(
-                        "https://api.energidataservice.dk/dataset/ElectricityBalanceNonv",
+                        "https://api.energidataservice.dk/dataset/ElectricityProdex5MinRealtime",
                         params={
                             "filter": f'{{"PriceArea":"{area}"}}',
                             "start": from_dt,
                             "limit": 1000,
                             "offset": offset,
-                            "sort": "HourUTC asc",
+                            "sort": "Minutes5UTC asc",
                         },
                         timeout=30
                     )
@@ -49,14 +49,24 @@ def collect_realtid_dk_hourly():
                 break
             
             for rec in records:
-                if not rows_per_area[area]:
-                    print(f"FELTER {area}:", list(rec.keys()))
-                dt_str = rec["HourDK"].replace("Z", "")
+                dt_str = rec["Minutes5DK"].replace("Z", "")
                 rows_per_area[area][dt_str] = {
-                    "solar":       rec.get("SolarPower", 0) or 0,
-                    "offshore":    rec.get("OffshoreWindPower", 0) or 0,
-                    "onshore":     rec.get("OnshoreWindPower", 0) or 0,
-                    "consumption": (rec.get("TotalLoad", 0) or 0) * (15/60),
+                    "solar":    rec.get("SolarPower", 0) or 0,
+                    "offshore": rec.get("OffshoreWindPower", 0) or 0,
+                    "onshore":  rec.get("OnshoreWindPower", 0) or 0,
+                    "consumption": (
+                        (rec.get("ProductionLt100MW", 0) or 0) +
+                        (rec.get("ProductionGe100MW", 0) or 0) +
+                        (rec.get("OffshoreWindPower", 0) or 0) +
+                        (rec.get("OnshoreWindPower", 0) or 0) +
+                        (rec.get("SolarPower", 0) or 0) -
+                        (rec.get("ExchangeGermany", 0) or 0) -
+                        (rec.get("ExchangeNetherlands", 0) or 0) -
+                        (rec.get("ExchangeGreatBritain", 0) or 0) -
+                        (rec.get("ExchangeNorway", 0) or 0) -
+                        (rec.get("ExchangeSweden", 0) or 0) -
+                        (rec.get("ExchangeGreatBelt", 0) or 0)
+                    ) * (5/60),
                 }
             
             if len(records) < 1000:
