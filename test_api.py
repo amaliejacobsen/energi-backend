@@ -4,8 +4,7 @@ r = requests.get(
     "https://api.energidataservice.dk/dataset/ElectricityBalanceNonv",
     params={
         "filter": '{"PriceArea":"DK1"}',
-        "start": "2026-06-03T00:00",
-        "limit": 5,
+        "limit": 1,
         "sort": "HourUTC desc",
     },
     timeout=30
