@@ -434,13 +434,14 @@ def fetch_nuclear_monthly(eic_code, year, token):
     return dict(monthly)
 
 def fetch_sweden_nuclear_daily():
-    """Henter svensk atomkraftproduktion fra SYSpower (daglig, MWh)."""
+    """Henter svensk atomkraftproduktion fra SYSpower (daglig, MWh) og aggregerer månedligt."""
     url = NUCLEAR_URL.replace("fileformat=iqy", "fileformat=html")
     r = requests.get(url, timeout=30)
     r.raise_for_status()
     
     from html.parser import HTMLParser
-    
+    from collections import defaultdict
+
     class TableParser(HTMLParser):
         def __init__(self):
             super().__init__()
@@ -470,7 +471,8 @@ def fetch_sweden_nuclear_daily():
     parser = TableParser()
     parser.feed(r.text)
     
-    rows = []
+    # Aggreger daglige værdier til månedlige summer
+    monthly = defaultdict(float)
     for row in parser.rows[1:]:  # skip header
         if len(row) < 3:
             continue
@@ -480,11 +482,16 @@ def fetch_sweden_nuclear_daily():
         except (ValueError, IndexError):
             continue
         
+        key = (date.year, date.month)
+        monthly[key] += sweden_mwh
+    
+    rows = []
+    for (year, month), value_mwh in monthly.items():
         rows.append({
             "country": "Sverige",
-            "year": date.year,
-            "month": date.month,
-            "value_mwh": sweden_mwh,
+            "year": year,
+            "month": month,
+            "value_mwh": value_mwh,
         })
     
     return rows
