@@ -1214,27 +1214,34 @@ def collect_realtid_dk_hourly():
     for area in ["DK1", "DK2"]:
         offset = 0
         while True:
-            r = requests.get(
-                "https://api.energidataservice.dk/dataset/ElectricityBalanceNonv",
-                params={
-                    "filter": f'{{"PriceArea":"{area}"}}',
-                    "start": from_dt,
-                    "limit": 1000,
-                    "offset": offset,
-                    "sort": "HourUTC asc",
-                },
-                timeout=30
-            )
-            r.raise_for_status()
+            for attempt in range(5):  # ← retry loop
+                try:
+                    r = requests.get(
+                        "https://api.energidataservice.dk/dataset/ElectricityBalanceNonv",
+                        params={
+                            "filter": f'{{"PriceArea":"{area}"}}',
+                            "start": from_dt,
+                            "limit": 1000,
+                            "offset": offset,
+                            "sort": "HourUTC asc",
+                        },
+                        timeout=30
+                    )
+                    if r.status_code == 429:
+                        print(f"  Rate limit, venter 30s...")
+                        time.sleep(30)
+                        continue
+                    r.raise_for_status()
+                    break
+                except Exception as e:
+                    print(f"  Fejl: {e}, venter 15s...")
+                    time.sleep(15)
+            
             records = r.json().get("records", [])
             if not records:
                 break
             
             for rec in records:
-                # DEBUG
-                if not rows_per_area[area]:
-                    print(f"FELTER {area}:", list(rec.keys()))
-                
                 dt_str = rec["HourDK"].replace("Z", "")
                 rows_per_area[area][dt_str] = {
                     "solar":       rec.get("SolarPower", 0) or 0,
@@ -1246,6 +1253,7 @@ def collect_realtid_dk_hourly():
             if len(records) < 1000:
                 break
             offset += 1000
+            time.sleep(2)
     
     for area, timepoints in rows_per_area.items():
         rows = []
@@ -1269,6 +1277,7 @@ def collect_realtid_dk_hourly():
 def collect_all():
     print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
     collect_realtid_dk_hourly()
+    time.sleep(30)  # ← pause så rate limit nulstilles
     collect_dk_hourly_data()
     collect_temperature_forecast_data()
     print(f"\nFærdig: {datetime.now()}\n{'='*40}")
