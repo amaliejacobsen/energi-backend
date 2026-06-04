@@ -15,9 +15,12 @@ def collect_realtid_dk_hourly():
     rows_per_area = {"DK1": {}, "DK2": {}}
     
     for area in ["DK1", "DK2"]:
+        if area == "DK2":
+            print("  Pause før DK2...")
+            time.sleep(60)
         offset = 0
         while True:
-            for attempt in range(5):
+            for attempt in range(10):
                 try:
                     r = requests.get(
                         "https://api.energidataservice.dk/dataset/ElectricityBalanceNonv",
@@ -31,8 +34,9 @@ def collect_realtid_dk_hourly():
                         timeout=30
                     )
                     if r.status_code == 429:
-                        print(f"  Rate limit, venter 30s...")
-                        time.sleep(30)
+                        wait = 60 * (attempt + 1)
+                        print(f"  Rate limit, venter {wait}s...")
+                        time.sleep(wait)
                         continue
                     r.raise_for_status()
                     break
