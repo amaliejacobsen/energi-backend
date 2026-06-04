@@ -49,6 +49,8 @@ def collect_realtid_dk_hourly():
                 break
             
             for rec in records:
+                if not rows_per_area[area]:
+                    print(f"FELTER {area}:", list(rec.keys()))
                 dt_str = rec["HourDK"].replace("Z", "")
                 rows_per_area[area][dt_str] = {
                     "solar":       rec.get("SolarPower", 0) or 0,
