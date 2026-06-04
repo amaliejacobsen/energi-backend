@@ -1206,23 +1206,22 @@ def collect_temperature_forecast_data():
 
 
 def collect_realtid_dk_hourly():
-    print("Henter ElectricityProdex5MinRealtime...")
+    print("Henter realtid data...")
     
     from_dt = (datetime.utcnow() - timedelta(hours=48)).strftime("%Y-%m-%dT%H:%M")
-    
     rows_per_area = {"DK1": {}, "DK2": {}}
     
     for area in ["DK1", "DK2"]:
         offset = 0
         while True:
             r = requests.get(
-                "https://api.energidataservice.dk/dataset/ElectricityProdex5MinRealtime",
+                "https://api.energidataservice.dk/dataset/ElectricityBalanceNonv",
                 params={
                     "filter": f'{{"PriceArea":"{area}"}}',
                     "start": from_dt,
                     "limit": 1000,
                     "offset": offset,
-                    "sort": "Minutes5UTC asc",
+                    "sort": "HourUTC asc",
                 },
                 timeout=30
             )
@@ -1232,20 +1231,22 @@ def collect_realtid_dk_hourly():
                 break
             
             for rec in records:
+                # DEBUG
+                if not rows_per_area[area]:
+                    print(f"FELTER {area}:", list(rec.keys()))
                 
-                dt_str = rec["Minutes5DK"].replace("Z", "")
+                dt_str = rec["HourDK"].replace("Z", "")
                 rows_per_area[area][dt_str] = {
                     "solar":       rec.get("SolarPower", 0) or 0,
                     "offshore":    rec.get("OffshoreWindPower", 0) or 0,
                     "onshore":     rec.get("OnshoreWindPower", 0) or 0,
-                    "consumption": (rec.get("TotalLoad", 0) or 0) * (5/60),
+                    "consumption": rec.get("GrossConsumption", 0) or 0,
                 }
             
             if len(records) < 1000:
                 break
             offset += 1000
-
-    # Gem i dk_production_hourly — kun hvis ikke allerede dækket af settlement
+    
     for area, timepoints in rows_per_area.items():
         rows = []
         for dt_str, vals in timepoints.items():
@@ -1267,7 +1268,8 @@ def collect_realtid_dk_hourly():
 
 def collect_all():
     print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
-    collect_hydro_forecast_data()
+    collect_realtid_dk_hourly()
+    collect_dk_hourly_data()
     collect_temperature_forecast_data()
     print(f"\nFærdig: {datetime.now()}\n{'='*40}")
     
