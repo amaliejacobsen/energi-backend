@@ -439,16 +439,44 @@ def fetch_sweden_nuclear_daily():
     r = requests.get(url, timeout=30)
     r.raise_for_status()
     
+    from html.parser import HTMLParser
+    
+    class TableParser(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.rows = []
+            self.current_row = []
+            self.current_cell = ""
+            self.in_cell = False
+        
+        def handle_starttag(self, tag, attrs):
+            if tag in ("td", "th"):
+                self.in_cell = True
+                self.current_cell = ""
+        
+        def handle_endtag(self, tag):
+            if tag in ("td", "th"):
+                self.current_row.append(self.current_cell.strip())
+                self.in_cell = False
+            elif tag == "tr":
+                if self.current_row:
+                    self.rows.append(self.current_row)
+                self.current_row = []
+        
+        def handle_data(self, data):
+            if self.in_cell:
+                self.current_cell += data
+    
+    parser = TableParser()
+    parser.feed(r.text)
+    
     rows = []
-    for line in r.text.splitlines():
-        # Find tabelrækker med dato-data
-        cells = [c.strip() for c in line.split("|") if c.strip()]
-        if len(cells) < 3:
+    for row in parser.rows[1:]:  # skip header
+        if len(row) < 3:
             continue
         try:
-            # Dato er DD.MM.YYYY format
-            date = datetime.strptime(cells[0], "%d.%m.%Y")
-            sweden_mwh = float(cells[2].replace(",", "."))
+            date = datetime.strptime(row[0], "%d.%m.%Y")
+            sweden_mwh = float(row[2].replace(",", "."))
         except (ValueError, IndexError):
             continue
         
@@ -1276,9 +1304,7 @@ def collect_realtid_dk_hourly():
 
 def collect_all():
     print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
-    collect_dk_hourly_data()
-    collect_temperature_forecast_data()
-    collect_hydro_forecast_data()
+    collect_nuclear_data(
     print(f"\nFærdig: {datetime.now()}\n{'='*40}")
 
 if __name__ == "__main__":
