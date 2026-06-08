@@ -1297,7 +1297,10 @@ def collect_realtid_dk_hourly():
             
             for rec in records:
                 dt_str = rec["HourDK"].replace("Z", "")
-                rows_per_area[area][dt_str] = {
+                dt_dk = datetime.fromisoformat(dt_str)
+                dt_utc = dt_dk - timedelta(hours=2)
+                dt_str_utc = dt_utc.strftime("%Y-%m-%dT%H:%M:%S")
+                rows_per_area[area][dt_str_utc] = {
                     "solar":       rec.get("SolarPower", 0) or 0,
                     "offshore":    rec.get("OffshoreWindPower", 0) or 0,
                     "onshore":     rec.get("OnshoreWindPower", 0) or 0,
@@ -1330,7 +1333,9 @@ def collect_realtid_dk_hourly():
 
 def collect_all():
     print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
-    collect_consumption_data()
+    collect_dk_hourly_data()
+    collect_temperature_forecast_data()
+    collect_hydro_forecast_data()
     print(f"\nFærdig: {datetime.now()}\n{'='*40}")
 
 if __name__ == "__main__":
