@@ -20,26 +20,29 @@ def collect_realtid_dk_hourly():
             for attempt in range(5):
                 try:
                     r = requests.get(
-                        "https://api.energidataservice.dk/dataset/ElectricityBalanceNonv",
-                        params={
-                            "filter": f'{{"PriceArea":"{area}"}}',
-                            "start": from_dt,
-                            "limit": 1000,
-                            "offset": offset,
-                            "sort": "HourUTC asc",
-                        },
-                        timeout=30
-                    )
-                    if r.status_code == 429:
-                        wait = 60 * (attempt + 1)
-                        print(f"  Rate limit, venter {wait}s...")
-                        time.sleep(wait)
-                        continue
-                    r.raise_for_status()
-                    break
-                except Exception as e:
-                    print(f"  Fejl: {e}, venter 15s...")
-                    time.sleep(15)
+                    "https://api.energidataservice.dk/dataset/ElectricityBalanceNonv",
+                    params={
+                        "filter": f'{{"PriceArea":"{area}"}}',
+                        "start": from_dt,
+                        "limit": 1000,
+                        "offset": offset,
+                        "sort": "HourUTC asc",
+                    },
+                    headers={
+                        "User-Agent": "Mozilla/5.0 energi-dashboard/1.0"
+                    },
+                    timeout=30
+                )
+                if r.status_code == 429:
+                    wait = 120 * (attempt + 1)  # ← længere ventetid
+                    print(f"  Rate limit, venter {wait}s...")
+                    time.sleep(wait)
+                    continue
+                r.raise_for_status()
+                break
+            except Exception as e:
+                print(f"  Fejl: {e}, venter 30s...")
+                time.sleep(30)
             
             records = r.json().get("records", [])
             if not records:
