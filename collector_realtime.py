@@ -14,35 +14,35 @@ def collect_realtid_dk_hourly():
     from_dt = (datetime.utcnow() - timedelta(hours=48)).strftime("%Y-%m-%dT%H:%M")
     
     for area in ["DK1", "DK2"]:
-    offset = 0
-    rows = []
-    while True:
-        for attempt in range(5):
-            try:
-                r = requests.get(
-                    "https://api.energidataservice.dk/dataset/ElectricityBalanceNonv",
-                    params={
-                        "filter": f'{{"PriceArea":"{area}"}}',
-                        "start": from_dt,
-                        "limit": 1000,
-                        "offset": offset,
-                        "sort": "HourUTC asc",
-                    },
-                    headers={
-                        "User-Agent": "Mozilla/5.0 energi-dashboard/1.0"
-                    },
-                    timeout=30
-                )
-                if r.status_code == 429:
-                    wait = 120 * (attempt + 1)
-                    print(f"  Rate limit, venter {wait}s...")
-                    time.sleep(wait)
-                    continue
-                r.raise_for_status()
-                break
-            except Exception as e:
-                print(f"  Fejl: {e}, venter 30s...")
-                time.sleep(30)
+        offset = 0
+        rows = []
+        while True:
+            for attempt in range(5):
+                try:
+                    r = requests.get(
+                        "https://api.energidataservice.dk/dataset/ElectricityBalanceNonv",
+                        params={
+                            "filter": f'{{"PriceArea":"{area}"}}',
+                            "start": from_dt,
+                            "limit": 1000,
+                            "offset": offset,
+                            "sort": "HourUTC asc",
+                        },
+                        headers={
+                            "User-Agent": "Mozilla/5.0 energi-dashboard/1.0"
+                        },
+                        timeout=30
+                    )
+                    if r.status_code == 429:
+                        wait = 120 * (attempt + 1)
+                        print(f"  Rate limit, venter {wait}s...")
+                        time.sleep(wait)
+                        continue
+                    r.raise_for_status()
+                    break
+                except Exception as e:
+                    print(f"  Fejl: {e}, venter 30s...")
+                    time.sleep(30)
             
             records = r.json().get("records", [])
             if not records:
