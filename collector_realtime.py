@@ -9,27 +9,24 @@ SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 supabase     = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 def collect_realtid_dk_hourly():
-    print("Henter realtid data...")
+    print("Henter realtid data (ElectricityBalanceNonv)...")
     
     from_dt = (datetime.utcnow() - timedelta(hours=48)).strftime("%Y-%m-%dT%H:%M")
-    rows_per_area = {"DK1": {}, "DK2": {}}
     
     for area in ["DK1", "DK2"]:
-        if area == "DK2":
-            print("  Pause før DK2...")
-            time.sleep(60)
         offset = 0
+        rows = []
         while True:
-            for attempt in range(10):
+            for attempt in range(5):
                 try:
                     r = requests.get(
-                        "https://api.energidataservice.dk/dataset/ElectricityProdex5MinRealtime",
+                        "https://api.energidataservice.dk/dataset/ElectricityBalanceNonv",
                         params={
                             "filter": f'{{"PriceArea":"{area}"}}',
                             "start": from_dt,
                             "limit": 1000,
                             "offset": offset,
-                            "sort": "Minutes5UTC asc",
+                            "sort": "HourUTC asc",
                         },
                         timeout=30
                     )
@@ -48,42 +45,29 @@ def collect_realtid_dk_hourly():
             if not records:
                 break
             
+            # Print felter første gang for debug
+            if offset == 0:
+                print(f"  FELTER {area}:", list(records[0].keys()))
+            
             for rec in records:
-                dt_str = rec["Minutes5DK"].replace("Z", "")
-                rows_per_area[area][dt_str] = {
-                    "solar":    rec.get("SolarPower", 0) or 0,
-                    "offshore": rec.get("OffshoreWindPower", 0) or 0,
-                    "onshore":  rec.get("OnshoreWindPower", 0) or 0,
-                    "consumption": (
-                        (rec.get("ProductionLt100MW", 0) or 0) +
-                        (rec.get("ProductionGe100MW", 0) or 0) +
-                        (rec.get("OffshoreWindPower", 0) or 0) +
-                        (rec.get("OnshoreWindPower", 0) or 0) +
-                        (rec.get("SolarPower", 0) or 0) -
-                        (rec.get("ExchangeGermany", 0) or 0) -
-                        (rec.get("ExchangeNetherlands", 0) or 0) -
-                        (rec.get("ExchangeGreatBritain", 0) or 0) -
-                        (rec.get("ExchangeNorway", 0) or 0) -
-                        (rec.get("ExchangeSweden", 0) or 0) -
-                        (rec.get("ExchangeGreatBelt", 0) or 0)
-                    ) * (5/60),
-                }
+                dt_str = rec["HourDK"].replace("Z", "")
+                for source, field in [
+                    ("solar",       "SolarPower"),
+                    ("offshore",    "OffshoreWindPower"),
+                    ("onshore",     "OnshoreWindPower"),
+                    ("consumption", "GrossConsumption"),
+                ]:
+                    rows.append({
+                        "area":       area,
+                        "source":     source,
+                        "datetime":   dt_str,
+                        "value_mwh":  round(rec.get(field, 0) or 0, 3),
+                    })
             
             if len(records) < 1000:
                 break
             offset += 1000
             time.sleep(2)
-    
-    for area, timepoints in rows_per_area.items():
-        rows = []
-        for dt_str, vals in timepoints.items():
-            for source in ["solar", "offshore", "onshore", "consumption"]:
-                rows.append({
-                    "area": area,
-                    "source": source,
-                    "datetime": dt_str,
-                    "value_mwh": round(vals[source], 3),
-                })
         
         if rows:
             for i in range(0, len(rows), 1000):
@@ -91,7 +75,7 @@ def collect_realtid_dk_hourly():
                     rows[i:i+1000],
                     on_conflict="area,source,datetime"
                 ).execute()
-            print(f"  {area} realtid gemt ({len(rows)} rækker)")
+            print(f"  {area} realtid gemt ({len(rows) // 4} tidspunkter)")
 
 if __name__ == "__main__":
     print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
