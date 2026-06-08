@@ -1494,7 +1494,7 @@ def collect_generation_mix():
 def collect_all():
     print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
     collect_generation_mix()
-    collect_dk_hourly_data()
+    collect_realtid_dk_hourly():
     print(f"\nFærdig: {datetime.now()}\n{'='*40}")
 
 if __name__ == "__main__":
