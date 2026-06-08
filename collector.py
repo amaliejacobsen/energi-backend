@@ -1280,7 +1280,11 @@ def collect_realtid_dk_hourly():
                         },
                         timeout=30
                     )
-                    print(r.json()["records"][0])
+                    rec = r.json()["records"][0]
+                    print("Solar:", rec.get("SolarPower"))
+                    print("Offshore:", rec.get("OffshoreWindPower"))
+                    print("Onshore:", rec.get("OnshoreWindPower"))
+                    print("Consumption:", rec.get("GrossConsumption"))
                     if r.status_code == 429:
                         print(f"  Rate limit, venter 30s...")
                         time.sleep(30)
