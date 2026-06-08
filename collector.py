@@ -1043,8 +1043,8 @@ def collect_dk_hourly_data():
         consumption_dict = {}
 
         for rec in fetch_all_records("ProductionConsumptionSettlement", area):
-            dt = datetime.fromisoformat(rec["HourDK"].replace('Z', '+00:00'))
-            dt_iso = dt.isoformat()
+            dt = datetime.fromisoformat(rec["HourDK"].replace('Z', ''))
+            dt_utc_str = (dt - timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%S")
             solar    = (rec.get("SolarPowerLt10kW_MWh", 0) or 0) + \
                        (rec.get("SolarPowerGe10Lt40kW_MWh", 0) or 0) + \
                        (rec.get("SolarPowerGe40kW_MWh", 0) or 0)
@@ -1053,10 +1053,10 @@ def collect_dk_hourly_data():
             onshore  = (rec.get("OnshoreWindLt50kW_MWh", 0) or 0) + \
                        (rec.get("OnshoreWindGe50kW_MWh", 0) or 0)
             consumption = rec.get("GrossConsumption_MWh", 0) or 0
-            solar_dict[dt_iso]       = {"area": area, "source": "solar",       "datetime": dt_iso, "value_mwh": solar}
-            offshore_dict[dt_iso]    = {"area": area, "source": "offshore",    "datetime": dt_iso, "value_mwh": offshore}
-            onshore_dict[dt_iso]     = {"area": area, "source": "onshore",     "datetime": dt_iso, "value_mwh": onshore}
-            consumption_dict[dt_iso] = {"area": area, "source": "consumption", "datetime": dt_iso, "value_mwh": consumption}
+            solar_dict[dt_utc_str]       = {"area": area, "source": "solar",       "datetime": dt_utc_str, "value_mwh": solar}
+            offshore_dict[dt_utc_str]    = {"area": area, "source": "offshore",    "datetime": dt_utc_str, "value_mwh": offshore}
+            onshore_dict[dt_utc_str]     = {"area": area, "source": "onshore",     "datetime": dt_utc_str, "value_mwh": onshore}
+            consumption_dict[dt_utc_str] = {"area": area, "source": "consumption", "datetime": dt_utc_str, "value_mwh": consumption}
 
 
         for source, d in [("solar", solar_dict), ("offshore", offshore_dict), ("onshore", onshore_dict), ("consumption", consumption_dict)]:
