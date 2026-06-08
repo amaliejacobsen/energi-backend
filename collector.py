@@ -1330,6 +1330,168 @@ def collect_realtid_dk_hourly():
                 ).execute()
             print(f"  {area} realtid gemt ({len(rows)} rækker)")
 
+
+DK_NEIGHBORS = {
+    "DK1": {
+        "eic": "10YDK-1--------W",
+        "neighbors": {
+            "NO2":     "10YNO-2--------T",
+            "DE":      "10Y1001A1001A82H",
+            "DK2":     "10YDK-2--------M",
+        }
+    },
+    "DK2": {
+        "eic": "10YDK-2--------M",
+        "neighbors": {
+            "SE4":     "10Y1001A1001A47J",
+            "DE":      "10Y1001A1001A63L",
+            "DK1":     "10YDK-1--------W",
+        }
+    }
+}
+
+def fetch_physical_flows(in_eic, out_eic, date_str, token):
+    """Henter fysiske flows fra in_Domain til out_Domain for en given dato."""
+    params = {
+        "documentType": "A11",
+        "in_Domain":    in_eic,
+        "out_Domain":   out_eic,
+        "periodStart":  f"{date_str.replace('-', '')}0000",
+        "periodEnd":    f"{date_str.replace('-', '')}2300",
+        "securityToken": token,
+    }
+    for attempt in range(3):
+        r = requests.get(ENTSOE_URL, params=params, timeout=60)
+        if r.status_code == 200:
+            break
+        elif r.status_code in (503, 429):
+            time.sleep(10 * (attempt + 1))
+        else:
+            return 0
+    else:
+        return 0
+
+    try:
+        root = ET.fromstring(r.text)
+    except ET.ParseError:
+        return 0
+
+    ns = {"ns": "urn:iec62325.351:tc57wg16:451-3:publicationdocument:7:0"}
+    total = 0
+    count = 0
+    for ts in root.findall(".//ns:TimeSeries", ns):
+        for period in ts.findall("ns:Period", ns):
+            res_el = period.find("ns:resolution", ns)
+            resolution = res_el.text if res_el is not None else "PT60M"
+            for point in period.findall("ns:Point", ns):
+                qty_el = point.find("ns:quantity", ns)
+                if qty_el is None:
+                    continue
+                try:
+                    qty = float(qty_el.text)
+                    if resolution == "PT15M":
+                        qty /= 4
+                    total += qty
+                    count += 1
+                except ValueError:
+                    continue
+    return total / count if count > 0 else 0
+
+def fetch_generation_mix(eic, date_str, token):
+    """Henter lokal produktionsmix (A75) for et prisområde."""
+    params = {
+        "documentType": "A75",
+        "processType":  "A16",
+        "in_Domain":    eic,
+        "periodStart":  f"{date_str.replace('-', '')}0000",
+        "periodEnd":    f"{date_str.replace('-', '')}2300",
+        "securityToken": token,
+    }
+    for attempt in range(3):
+        r = requests.get(ENTSOE_URL, params=params, timeout=60)
+        if r.status_code == 200:
+            break
+        elif r.status_code in (503, 429):
+            time.sleep(10 * (attempt + 1))
+        else:
+            return {}
+    else:
+        return {}
+
+    try:
+        root = ET.fromstring(r.text)
+    except ET.ParseError:
+        return {}
+
+    ns = {"ns": "urn:iec62325.351:tc57wg16:451-6:generationloaddocument:3:0"}
+    result = defaultdict(float)
+    counts = defaultdict(int)
+
+    for ts in root.findall(".//ns:TimeSeries", ns):
+        psr_el = ts.find(".//ns:psrType", ns)
+        if psr_el is None:
+            continue
+        psr = PSR_NAMES.get(psr_el.text, psr_el.text)
+        for period in ts.findall("ns:Period", ns):
+            res_el = period.find("ns:resolution", ns)
+            resolution = res_el.text if res_el is not None else "PT60M"
+            for point in period.findall("ns:Point", ns):
+                qty_el = point.find("ns:quantity", ns)
+                if qty_el is None:
+                    continue
+                try:
+                    qty = float(qty_el.text)
+                    if resolution == "PT15M":
+                        qty /= 4
+                    result[psr] += qty
+                    counts[psr] += 1
+                except ValueError:
+                    continue
+
+    return {psr: result[psr] / counts[psr] for psr in result if counts[psr] > 0}
+
+def collect_generation_mix():
+    print("Henter generation mix...")
+    date_str = current_date.strftime("%Y-%m-%d")
+    rows = []
+
+    for area, config in DK_NEIGHBORS.items():
+        eic = config["eic"]
+
+        # Lokal produktion
+        gen_mix = fetch_generation_mix(eic, date_str, ENTSOE_TOKEN)
+        for psr_name, avg_mw in gen_mix.items():
+            rows.append({
+                "area":     area,
+                "date":     date_str,
+                "source":   psr_name,
+                "avg_mw":   round(avg_mw, 2),
+                "is_import": False,
+            })
+
+        # Import fra nabolande
+        for neighbor_name, neighbor_eic in config["neighbors"].items():
+            # Import = flow fra nabo til DK
+            imp = fetch_physical_flows(neighbor_eic, eic, date_str, ENTSOE_TOKEN)
+            # Eksport = flow fra DK til nabo
+            exp = fetch_physical_flows(eic, neighbor_eic, date_str, ENTSOE_TOKEN)
+            net_import = imp - exp
+            if net_import > 0:
+                rows.append({
+                    "area":      area,
+                    "date":      date_str,
+                    "source":    f"Fra {neighbor_name}",
+                    "avg_mw":    round(net_import, 2),
+                    "is_import": True,
+                })
+            time.sleep(1)
+
+    if rows:
+        supabase.table("generation_mix").upsert(
+            rows, on_conflict="area,date,source"
+        ).execute()
+        print(f"Generation mix gemt ({len(rows)} rækker).")
+
 def collect_all():
     print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
     collect_dk_hourly_data()
