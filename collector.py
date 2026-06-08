@@ -1297,9 +1297,8 @@ def collect_realtid_dk_hourly():
             for rec in records:
                 dt_str = rec["HourDK"].replace("Z", "")
                 dt_dk = datetime.fromisoformat(dt_str)
-                dt_utc = dt_dk - timedelta(hours=2)
-                dt_str_utc = dt_utc.strftime("%Y-%m-%dT%H:%M:%S")
-                rows_per_area[area][dt_str_utc] = {
+                dt_iso = dt_dk.isoformat()  # ← behold dansk tid med +00:00 format
+                rows_per_area[area][dt_iso] = {
                     "solar":       rec.get("SolarPower", 0) or 0,
                     "offshore":    rec.get("OffshoreWindPower", 0) or 0,
                     "onshore":     rec.get("OnshoreWindPower", 0) or 0,
