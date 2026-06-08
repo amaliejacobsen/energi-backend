@@ -14,12 +14,12 @@ def collect_realtid_dk_hourly():
     from_dt = (datetime.utcnow() - timedelta(hours=48)).strftime("%Y-%m-%dT%H:%M")
     
     for area in ["DK1", "DK2"]:
-        offset = 0
-        rows = []
-        while True:
-            for attempt in range(5):
-                try:
-                    r = requests.get(
+    offset = 0
+    rows = []
+    while True:
+        for attempt in range(5):
+            try:
+                r = requests.get(
                     "https://api.energidataservice.dk/dataset/ElectricityBalanceNonv",
                     params={
                         "filter": f'{{"PriceArea":"{area}"}}',
@@ -34,7 +34,7 @@ def collect_realtid_dk_hourly():
                     timeout=30
                 )
                 if r.status_code == 429:
-                    wait = 120 * (attempt + 1)  # ← længere ventetid
+                    wait = 120 * (attempt + 1)
                     print(f"  Rate limit, venter {wait}s...")
                     time.sleep(wait)
                     continue
