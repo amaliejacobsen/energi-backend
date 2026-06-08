@@ -1280,6 +1280,7 @@ def collect_realtid_dk_hourly():
                         },
                         timeout=30
                     )
+                    print(r.json()["records"][0])
                     if r.status_code == 429:
                         print(f"  Rate limit, venter 30s...")
                         time.sleep(30)
