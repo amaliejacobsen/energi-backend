@@ -885,6 +885,7 @@ def fetch_consumption_monthly(eic_code, year, token):
         # Vi vil kun have 'Consumption' (A04) og 'Actual' (A05)
         # Dette sikrer at vi ikke blander forecasts ind i gennemsnittet
         b_type = ts.find(f"{prefix}businessType")
+        print(f"      businessType: {b_type.text if b_type is not None else 'None'}")
         if b_type is not None and b_type.text != "A05":
             continue
 
