@@ -853,7 +853,6 @@ def fetch_consumption_monthly(eic_code, year, token):
     r = None
     for attempt in range(5):
         try:
-            print(f"      Henter forbrug for {eic_code} {year} (Forsøg {attempt + 1})...")
             r = requests.get(ENTSOE_URL, params=params, timeout=120)
             if r.status_code == 200:
                 break
@@ -885,8 +884,7 @@ def fetch_consumption_monthly(eic_code, year, token):
         # Vi vil kun have 'Consumption' (A04) og 'Actual' (A05)
         # Dette sikrer at vi ikke blander forecasts ind i gennemsnittet
         b_type = ts.find(f"{prefix}businessType")
-        print(f"      businessType: {b_type.text if b_type is not None else 'None'}")
-        if b_type is not None and b_type.text != "A05":
+        if b_type is not None and b_type.text not in ("A04", "A05"):
             continue
 
         for period in ts.findall(f"{prefix}Period"):
