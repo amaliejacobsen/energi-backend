@@ -927,52 +927,72 @@ def fetch_consumption_monthly(eic_code, year, token):
     m_avg = {m: sum(v) / len(v) for m, v in monthly.items() if v}
     h_avg = {h: sum(v) / len(v) for h, v in hourly.items() if v}
     
-    return m_avg, h_avg
+    return m_avg, h_avg, unique_data  # ← tilføj unique_data
+    
 
 
 def collect_consumption_data():
     print("Henter forbrug...")
     m_rows = []
     h_rows = []
+    dt_rows = []  # ← ny liste til præcise datoer
+    
     for zone, eic in CONSUMPTION_ZONES.items():
         for year in fetch_years:
             print(f"  {zone} {year}...")
-            monthly, hourly = fetch_consumption_monthly(eic, year, ENTSOE_TOKEN)
+            monthly, hourly, unique_data = fetch_consumption_monthly(eic, year, ENTSOE_TOKEN)
+            
             for month, val in monthly.items():
                 if is_too_recent(year, month):
                     continue
                 m_rows.append({"zone": zone, "year": year, "month": month, "value_mwh": val})
+            
             for hour, val in hourly.items():
                 h_rows.append({"zone": zone, "year": year, "hour": hour, "value_mwh": val})
+            
+            # ← ny: gem præcise datoer til dk_production_hourly
+            for dt, qty in unique_data.items():
+                dt_rows.append({
+                    "area":      zone,
+                    "source":    "consumption",
+                    "datetime":  dt.isoformat(),
+                    "value_mwh": round(qty, 3),
+                })
+            
             time.sleep(1)
 
-    # Håndtering af månedlige data (consumption)
+    # Månedlige data
     if m_rows:
         unique_m_rows = {}
         for row in m_rows:
-            # Skaber en unik nøgle for kombinationen af zone, år og måned
             m_key = f"{row['zone']}_{row['year']}_{row['month']}"
             unique_m_rows[m_key] = row
-        
         supabase.table("consumption").upsert(
-            list(unique_m_rows.values()), 
+            list(unique_m_rows.values()),
             on_conflict="zone,year,month"
         ).execute()
 
-    # Håndtering af timelige data (consumption_hourly)
+    # Timesgennemsnit
     if h_rows:
         unique_h_rows = {}
         for row in h_rows:
-            # Skaber en unik nøgle for kombinationen af zone, år og time
             h_key = f"{row['zone']}_{row['year']}_{row['hour']}"
             unique_h_rows[h_key] = row
-        
         supabase.table("consumption_hourly").upsert(
-            list(unique_h_rows.values()), 
+            list(unique_h_rows.values()),
             on_conflict="zone,year,hour"
         ).execute()
 
-    print("Forbrugsdata gemt (rensede for dubletter).")
+    # ← ny: præcise datoer til dk_production_hourly
+    if dt_rows:
+        for i in range(0, len(dt_rows), 1000):
+            supabase.table("dk_production_hourly").upsert(
+                dt_rows[i:i+1000],
+                on_conflict="area,source,datetime"
+            ).execute()
+        print(f"Forbrugsdata gemt ({len(dt_rows)} rækker til dk_production_hourly).")
+
+    print("Forbrugsdata gemt.")
 
 
 def collect_dk_hourly_data():
