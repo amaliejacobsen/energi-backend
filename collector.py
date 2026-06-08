@@ -860,20 +860,20 @@ def fetch_consumption_monthly(eic_code, year, token):
             elif r.status_code in (503, 429):
                 time.sleep(20 * (attempt + 1))
             else:
-                return {}, {}
+                return {}, {}, {}
         except Exception:
             time.sleep(15 * (attempt + 1))
             continue
     else:
-        return {}, {}
+        return {}, {}, {}
 
     if r is None or "No matching data found" in r.text:
-        return {}, {}
+        return {}, {}, {}
         
     try:
         root = ET.fromstring(r.text)
     except ET.ParseError:
-        return {}, {}
+        return {}, {}, {}
 
     ns_uri = root.tag.split("}")[0][1:] if root.tag.startswith("{") else ""
     prefix = f"{{{ns_uri}}}" if ns_uri else ""
