@@ -1470,11 +1470,10 @@ def collect_generation_mix():
 
         # Import fra nabolande
         for neighbor_name, neighbor_eic in config["neighbors"].items():
-            # Import = flow fra nabo til DK
             imp = fetch_physical_flows(neighbor_eic, eic, date_str, ENTSOE_TOKEN)
-            # Eksport = flow fra DK til nabo
             exp = fetch_physical_flows(eic, neighbor_eic, date_str, ENTSOE_TOKEN)
             net_import = imp - exp
+            print(f"  {area} ← {neighbor_name}: imp={imp:.0f} exp={exp:.0f} net={net_import:.0f}")
             if net_import > 0:
                 rows.append({
                     "area":      area,
