@@ -941,6 +941,7 @@ def collect_consumption_data():
         for year in fetch_years:
             print(f"  {zone} {year}...")
             monthly, hourly, unique_data = fetch_consumption_monthly(eic, year, ENTSOE_TOKEN)
+            print(f"    unique_data størrelse: {len(unique_data)}") 
             
             for month, val in monthly.items():
                 if is_too_recent(year, month):
