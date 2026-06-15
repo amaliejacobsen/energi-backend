@@ -221,14 +221,34 @@ def fetch_generation_mix(eic, date_str, token):
     return {psr: result[psr] / counts[psr] for psr in result if counts[psr] > 0}
 
 
+def fetch_dk_production_today(area):
+    """Henter dagens sol og vind fra Energidataservice."""
+    today = current_date.strftime("%Y-%m-%dT00:00")
+    records = fetch_all_records("ProductionConsumptionSettlement", area, start=today)
+    solar_total, offshore_total, onshore_total, count = 0, 0, 0, 0
+    for rec in records:
+        solar_total += (rec.get("SolarPowerLt10kW_MWh", 0) or 0) + \
+                       (rec.get("SolarPowerGe10Lt40kW_MWh", 0) or 0) + \
+                       (rec.get("SolarPowerGe40kW_MWh", 0) or 0)
+        offshore_total += (rec.get("OffshoreWindLt100MW_MWh", 0) or 0) + \
+                          (rec.get("OffshoreWindGe100MW_MWh", 0) or 0)
+        onshore_total += (rec.get("OnshoreWindLt50kW_MWh", 0) or 0) + \
+                         (rec.get("OnshoreWindGe50kW_MWh", 0) or 0)
+        count += 1
+    if count == 0:
+        return {}
+    return {
+        "Solar": round(solar_total / count, 2),
+        "Wind Offshore": round(offshore_total / count, 2),
+        "Wind Onshore": round(onshore_total / count, 2),
+    }
+
 def collect_generation_mix():
     print("Henter generation mix...")
     date_str = current_date.strftime("%Y-%m-%d")
     rows = []
-
     for area, config in DK_NEIGHBORS.items():
         eic = config["eic"]
-
         gen_mix = fetch_generation_mix(eic, date_str, ENTSOE_TOKEN)
         print(f"  {area} gen_mix: {gen_mix}")
         for psr_name, avg_mw in gen_mix.items():
@@ -239,7 +259,17 @@ def collect_generation_mix():
                 "avg_mw":    round(avg_mw, 2),
                 "is_import": False,
             })
-
+        # Tilføj sol og vind fra Energidataservice
+        dk_prod = fetch_dk_production_today(area)
+        for source, avg_mw in dk_prod.items():
+            if avg_mw > 0:
+                rows.append({
+                    "area":      area,
+                    "date":      date_str,
+                    "source":    source,
+                    "avg_mw":    avg_mw,
+                    "is_import": False,
+                })
         for neighbor_name, neighbor_eic in config["neighbors"].items():
             imp = fetch_physical_flows(neighbor_eic, eic, date_str, ENTSOE_TOKEN)
             exp = fetch_physical_flows(eic, neighbor_eic, date_str, ENTSOE_TOKEN)
@@ -254,7 +284,6 @@ def collect_generation_mix():
                     "is_import": True,
                 })
             time.sleep(1)
-
     if rows:
         supabase.table("generation_mix").upsert(
             rows, on_conflict="area,date,source"
