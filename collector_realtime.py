@@ -359,7 +359,7 @@ def collect_generation_mix():
     now = datetime.utcnow()
     start_str = (now - timedelta(hours=2)).strftime("%Y%m%d%H%M")
     end_str = now.strftime("%Y%m%d%H%M")
-    EXCLUDE_FROM_ENTSOE = {"Solar", "Wind Offshore", "Wind Onshore"}
+    EXCLUDE_FROM_ENTSOE = {"Solar", "Wind Offshore", "Wind Onshore", "Nuclear", "Other", "Other renewable"}
 
     for area, config in DK_NEIGHBORS.items():
         eic = config["eic"]
