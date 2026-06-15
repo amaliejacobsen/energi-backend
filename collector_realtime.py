@@ -271,26 +271,38 @@ def fetch_all_records(dataset, area, start="2020-01-01", end=None):
 
 
 def fetch_dk_production_today(area):
-    """Henter dagens sol og vind fra Energidataservice."""
+    """Henter dagens sol og vind i REEL REALTID fra ElectricityBalanceNonv."""
     today = current_date.strftime("%Y-%m-%dT00:00")
-    records = fetch_all_records("ProductionConsumptionSettlement", area, start=today)
+    
+    # Debug print: Se præcis hvilken dato koden spørger efter data fra
+    print(f"  -> [DEBUG] Henter sol/vind for {area} med start: {today}")
+    
+    records = fetch_all_records("ElectricityBalanceNonv", area, start=today)
+    
+    # Debug print: Se hvor mange rækker API'et rent faktisk returnerede
+    print(f"  -> [DEBUG] Modtog {len(records)} rækker fra API'et for {area}")
+    
     solar_total, offshore_total, onshore_total, count = 0, 0, 0, 0
+    
     for rec in records:
-        solar_total += (rec.get("SolarPowerLt10kW_MWh", 0) or 0) + \
-                       (rec.get("SolarPowerGe10Lt40kW_MWh", 0) or 0) + \
-                       (rec.get("SolarPowerGe40kW_MWh", 0) or 0)
-        offshore_total += (rec.get("OffshoreWindLt100MW_MWh", 0) or 0) + \
-                          (rec.get("OffshoreWindGe100MW_MWh", 0) or 0)
-        onshore_total += (rec.get("OnshoreWindLt50kW_MWh", 0) or 0) + \
-                         (rec.get("OnshoreWindGe50kW_MWh", 0) or 0)
+        solar_total += rec.get("SolarPower", 0) or 0
+        offshore_total += rec.get("OffshoreWindPower", 0) or 0
+        onshore_total += rec.get("OnshoreWindPower", 0) or 0
         count += 1
+        
     if count == 0:
+        print(f"  -> [DEBUG] Ingen rækker at beregne for {area}, returnerer tomt.")
         return {}
-    return {
+        
+    res = {
         "Solar": round(solar_total / count, 2),
         "Wind Offshore": round(offshore_total / count, 2),
         "Wind Onshore": round(onshore_total / count, 2),
     }
+    
+    # Debug print: Se hvad resultatet af beregningen blev
+    print(f"  -> [DEBUG] Beregnet snit for {area}: {res}")
+    return res
 
 def collect_generation_mix():
     print("Henter generation mix...")
