@@ -152,16 +152,24 @@ def fetch_physical_flows(in_eic, out_eic, start_str, end_str, token):
         "securityToken": token,
     }
     for attempt in range(3):
-        r = requests.get(ENTSOE_URL, params=params, timeout=60)
-        if r.status_code == 200:
-            break
-        elif r.status_code in (503, 429):
-            time.sleep(10 * (attempt + 1))
-        else:
+        try:
+            r = requests.get(ENTSOE_URL, params=params, timeout=90)  # ← op fra 60
+            if r.status_code == 200:
+                break
+            elif r.status_code in (503, 429):
+                time.sleep(10 * (attempt + 1))
+            else:
+                return 0
+        except requests.exceptions.ReadTimeout:
+            print(f"  Timeout ved physical flows (forsøg {attempt+1}/3), venter 30s...")
+            time.sleep(30)
+        except Exception as e:
+            print(f"  Fejl ved physical flows: {e}")
             return 0
     else:
+        print(f"  Alle forsøg fejlede for {in_eic} → {out_eic}, returnerer 0")
         return 0
-
+    # ... resten uændret
     try:
         root = ET.fromstring(r.text)
     except ET.ParseError:
@@ -292,7 +300,7 @@ def fetch_all_records(dataset, area, start="2020-01-01", end=None):
 
 
 def fetch_dk_production_today(area):
-    """Henter sol og vind for de seneste 2 timer fra ElectricityProdex5MinRealtime."""
+    """Henter sol og vind - seneste tilgængelige måling."""
     now = datetime.utcnow()
     start = (now - timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M")
     
@@ -326,34 +334,25 @@ def fetch_dk_production_today(area):
         records = r.json().get("records", [])
         if not records:
             break
-        # ← Filtrer kun rækker der matcher area
         all_records.extend([rec for rec in records if rec.get("PriceArea") == area])
         if len(records) < 1000:
             break
         offset += 1000
         time.sleep(2)
 
-    solar_total, offshore_total, onshore_total, count = 0, 0, 0, 0
-    for rec in all_records:
-        solar_total    += rec.get("SolarPower", 0) or 0
-        offshore_total += rec.get("OffshoreWindPower", 0) or 0
-        onshore_total  += rec.get("OnshoreWindPower", 0) or 0
-        count += 1
-
-    if count == 0:
+    if not all_records:
         print(f"  -> Ingen rækker for {area}")
         return {}
-    
-    # ← INDSÆT HER
-    print(f"  Antal rækker for {area}: {len(all_records)}")
-    print(f"  Eksempel række: {all_records[0] if all_records else 'ingen'}")
-    
-    return {
-        "Solar":         round(solar_total / count, 2),
-        "Wind Offshore": round(offshore_total / count, 2),
-        "Wind Onshore":  round(onshore_total / count, 2),
-    }
 
+    # Tag KUN den seneste række
+    latest = all_records[-1]
+    print(f"  Seneste måling for {area}: {latest['Minutes5DK']} → Solar={latest.get('SolarPower')}, Offshore={latest.get('OffshoreWindPower')}, Onshore={latest.get('OnshoreWindPower')}")
+
+    return {
+        "Solar":         round(latest.get("SolarPower", 0) or 0, 2),
+        "Wind Offshore": round(latest.get("OffshoreWindPower", 0) or 0, 2),
+        "Wind Onshore":  round(latest.get("OnshoreWindPower", 0) or 0, 2),
+    }
 
 
 def collect_generation_mix():
@@ -393,17 +392,20 @@ def collect_generation_mix():
                     "is_import": False,
                 })
         for neighbor_name, neighbor_eic in config["neighbors"].items():
-            imp = fetch_physical_flows(neighbor_eic, eic, start_str, end_str, ENTSOE_TOKEN)
-            print(f"  {area} ← {neighbor_name}: imp={imp:.0f}")
-            if imp > 0:
-                rows.append({
-                    "area":      area,
-                    "date":      date_str,
-                    "source":    f"Fra {neighbor_name}",
-                    "avg_mw":    round(imp, 2),
-                    "is_import": True,
-                })
-            time.sleep(1)
+            try:
+                imp = fetch_physical_flows(neighbor_eic, eic, start_str, end_str, ENTSOE_TOKEN)
+                print(f"  {area} ← {neighbor_name}: imp={imp:.0f}")
+                if imp > 0:
+                    rows.append({
+                        "area":      area,
+                        "date":      date_str,
+                        "source":    f"Fra {neighbor_name}",
+                        "avg_mw":    round(imp, 2),
+                        "is_import": True,
+                    })
+            except Exception as e:
+                print(f"  Fejl ved {neighbor_name}, springer over: {e}")
+            time.sleep(2)
 
     if rows:
         print("\n--- GENERATION MIX DATA DER SENDES TIL SUPABASE ---")
