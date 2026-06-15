@@ -220,7 +220,7 @@ def fetch_generation_mix(eic, date_str, token):
 
     return {psr: result[psr] / counts[psr] for psr in result if counts[psr] > 0}
 
-def fetch_all_records(dataset, area, start="2020-01-01"):
+def fetch_all_records(dataset, area, start="2020-01-01", end=None):
     all_records = []
     limit = 10000
     offset = 0
@@ -228,26 +228,31 @@ def fetch_all_records(dataset, area, start="2020-01-01"):
     rate_limit_attempts = 0
     while True:
         try:
-            r = requests.get(f"https://api.energidataservice.dk/dataset/{dataset}", params={
+            # RETTELSE 1: Vi bygger params sikkert så den ikke crasher hvis global 'end' mangler
+            params = {
                 "start": start,
-                "end": end,
                 "filter": f'{{"PriceArea":"{area}"}}',
                 "limit": limit,
                 "offset": offset,
                 "sort": f"{sort_column} asc",
-            }, timeout=30)
+            }
+            if end is not None:
+                params["end"] = end
+
+            r = requests.get(f"https://api.energidataservice.dk/dataset/{dataset}", params=params, timeout=30)
             
             if r.status_code == 429:
-                rate_limit_attempts += 1   # <--- TÆL OP HER
-                ventetid = 60 * rate_limit_attempts  # Giver 60s, 120s, 180s osv.
-                print(f"  Rate limit ramt for {dataset} ({area}) ved offset {offset}, venter 30s...")
+                rate_limit_attempts += 1   
+                ventetid = 60 * rate_limit_attempts  
+                # RETTELSE 2: Dynamisk ventetid vises nu korrekt i printet
+                print(f"  Rate limit ramt for {dataset} ({area}) ved offset {offset}, venter {ventetid}s...")
                 time.sleep(ventetid)
                 continue
             rate_limit_attempts = 0 
             
+            # RETTELSE 3: Fjernet den ekstra dublerede r.raise_for_status()
             r.raise_for_status()
                 
-            r.raise_for_status()
             if not r.text.strip():
                 break
             data = r.json()
@@ -258,7 +263,7 @@ def fetch_all_records(dataset, area, start="2020-01-01"):
             if len(records) < limit:
                 break
             offset += limit
-            time.sleep(2)  # Øget fra 0.3 til 2 sekunder
+            time.sleep(2)  
         except Exception as e:
             print(f"Fejl ved hentning af {dataset} ({area}): {e}")
             break
@@ -329,6 +334,12 @@ def collect_generation_mix():
                 })
             time.sleep(1)
     if rows:
+        # RETTELSE 4: Tilføjet et synligt log-print, så du rent faktisk kan se dit mix i terminalen
+        print("\n--- GENERATION MIX DATA DER SENDES TIL SUPABASE ---")
+        for r in rows:
+            print(f"Area: {r['area']} | Source: {r['source']:<22} | MW: {r['avg_mw']選択:<8} | Import: {r['is_import']}")
+        print("---------------------------------------------------\n")
+
         supabase.table("generation_mix").upsert(
             rows, on_conflict="area,date,source"
         ).execute()
