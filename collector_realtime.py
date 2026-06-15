@@ -32,25 +32,29 @@ def collect_realtid_dk_hourly():
     rows_per_area = {"DK1": {}, "DK2": {}}
 
     for area in ["DK1", "DK2"]:
+        if area == "DK2":
+            print("  Pause før DK2...")
+            time.sleep(60)
         offset = 0
         while True:
             r = None
-            for attempt in range(5):
+            for attempt in range(10):
                 try:
                     r = requests.get(
-                        "https://api.energidataservice.dk/dataset/ElectricityBalanceNonv",
+                        "https://api.energidataservice.dk/dataset/ElectricityProdex5MinRealtime",
                         params={
                             "filter": f'{{"PriceArea":"{area}"}}',
                             "start": from_dt,
                             "limit": 1000,
                             "offset": offset,
-                            "sort": "HourUTC asc",
+                            "sort": "Minutes5UTC asc",
                         },
                         timeout=30
                     )
                     if r.status_code == 429:
-                        print(f"  Rate limit, venter 30s...")
-                        time.sleep(30)
+                        wait = 60 * (attempt + 1)
+                        print(f"  Rate limit, venter {wait}s...")
+                        time.sleep(wait)
                         continue
                     r.raise_for_status()
                     break
@@ -66,14 +70,31 @@ def collect_realtid_dk_hourly():
                 break
 
             for rec in records:
-                dt_str = rec["HourDK"].replace("Z", "")
+                dt_str = rec["Minutes5DK"].replace("Z", "")
                 dt_dk = datetime.fromisoformat(dt_str)
-                dt_iso = dt_dk.isoformat()
-                rows_per_area[area][dt_iso] = {
+                dt_utc = dt_dk - timedelta(hours=2)
+                dt_str_utc = dt_utc.strftime("%Y-%m-%dT%H:%M:%S")
+
+                exchange_abroad = (
+                    (rec.get("ExchangeGermany", 0) or 0) +
+                    (rec.get("ExchangeNetherlands", 0) or 0) +
+                    (rec.get("ExchangeGreatBritain", 0) or 0) +
+                    (rec.get("ExchangeNorway", 0) or 0) +
+                    (rec.get("ExchangeSweden", 0) or 0) +
+                    (rec.get("BornholmSE4", 0) or 0)
+                )
+                production = (
+                    (rec.get("ProductionLt100MW", 0) or 0) +
+                    (rec.get("ProductionGe100MW", 0) or 0) +
+                    (rec.get("OffshoreWindPower", 0) or 0) +
+                    (rec.get("OnshoreWindPower", 0) or 0) +
+                    (rec.get("SolarPower", 0) or 0)
+                )
+                rows_per_area[area][dt_str_utc] = {
                     "solar":       rec.get("SolarPower", 0) or 0,
                     "offshore":    rec.get("OffshoreWindPower", 0) or 0,
                     "onshore":     rec.get("OnshoreWindPower", 0) or 0,
-                    "consumption": rec.get("GrossConsumption", 0) or 0,
+                    "consumption": (production - exchange_abroad) * (5/60),
                 }
 
             if len(records) < 1000:
@@ -99,26 +120,6 @@ def collect_realtid_dk_hourly():
                     on_conflict="area,source,datetime"
                 ).execute()
             print(f"  {area} realtid gemt ({len(rows)} rækker)")
-
-
-DK_NEIGHBORS = {
-    "DK1": {
-        "eic": "10YDK-1--------W",
-        "neighbors": {
-            "NO2": "10YNO-2--------T",
-            "DE":  "10Y1001A1001A82H",
-            "DK2": "10YDK-2--------M",
-        }
-    },
-    "DK2": {
-        "eic": "10YDK-2--------M",
-        "neighbors": {
-            "SE4": "10Y1001A1001A47J",
-            "DE":  "10Y1001A1001A63L",
-            "DK1": "10YDK-1--------W",
-        }
-    }
-}
 
 
 def fetch_physical_flows(in_eic, out_eic, date_str, token):
