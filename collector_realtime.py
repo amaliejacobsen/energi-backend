@@ -352,23 +352,22 @@ def fetch_dk_production_today(area):
 def collect_generation_mix():
     print("Henter generation mix...")
     date_str = current_date.strftime("%Y-%m-%d")
-    rows = []  # ← mangler denne linje
+    rows = []
     now = datetime.utcnow()
     start_str = (now - timedelta(hours=2)).strftime("%Y%m%d%H%M")
     end_str = now.strftime("%Y%m%d%H%M")
-
     EXCLUDE_FROM_ENTSOE = {"Solar", "Wind Offshore", "Wind Onshore"}
 
-    for psr_name, avg_mw in gen_mix.items():
-        if psr_name in EXCLUDE_FROM_ENTSOE:
-            continue
-        rows.append({...})
-    
     for area, config in DK_NEIGHBORS.items():
         eic = config["eic"]
         gen_mix = fetch_generation_mix(eic, start_str, end_str, ENTSOE_TOKEN)
+        if not gen_mix:
+            print(f"  Ingen gen_mix data for {area}, springer over.")
+            continue
         print(f"  {area} gen_mix: {gen_mix}")
         for psr_name, avg_mw in gen_mix.items():
+            if psr_name in EXCLUDE_FROM_ENTSOE:
+                continue
             rows.append({
                 "area":      area,
                 "date":      date_str,
@@ -376,7 +375,6 @@ def collect_generation_mix():
                 "avg_mw":    round(avg_mw, 2),
                 "is_import": False,
             })
-        # Tilføj sol og vind fra Energidataservice
         dk_prod = fetch_dk_production_today(area)
         for source, avg_mw in dk_prod.items():
             if avg_mw > 0:
@@ -399,13 +397,12 @@ def collect_generation_mix():
                     "is_import": True,
                 })
             time.sleep(1)
+
     if rows:
-        # RETTET: Det mærkelige tegn er fjernet fra f-stringen herunder
         print("\n--- GENERATION MIX DATA DER SENDES TIL SUPABASE ---")
         for r in rows:
             print(f"Area: {r['area']} | Source: {r['source']:<22} | MW: {r['avg_mw']:<8} | Import: {r['is_import']}")
         print("---------------------------------------------------\n")
-
         supabase.table("generation_mix").upsert(
             rows, on_conflict="area,date,source"
         ).execute()
