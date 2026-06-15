@@ -140,13 +140,13 @@ def collect_realtid_dk_hourly():
             print(f"  {area} realtid gemt ({len(rows)} rækker)")
 
 
-def fetch_physical_flows(in_eic, out_eic, date_str, token):
+def fetch_physical_flows(in_eic, out_eic, start_str, end_str, token):
     params = {
         "documentType": "A11",
         "in_Domain":    in_eic,
         "out_Domain":   out_eic,
-        "periodStart":  f"{date_str.replace('-', '')}0000",
-        "periodEnd":    f"{date_str.replace('-', '')}2300",
+        "periodStart":  start_str,
+        "periodEnd":    end_str,
         "securityToken": token,
     }
     for attempt in range(3):
@@ -187,13 +187,13 @@ def fetch_physical_flows(in_eic, out_eic, date_str, token):
     return total / count if count > 0 else 0
 
 
-def fetch_generation_mix(eic, date_str, token):
+def fetch_generation_mix(eic, start_str, end_str, token):
     params = {
         "documentType": "A75",
         "processType":  "A16",
         "in_Domain":    eic,
-        "periodStart":  f"{date_str.replace('-', '')}0000",
-        "periodEnd":    f"{date_str.replace('-', '')}2300",
+        "periodStart":  start_str,
+        "periodEnd":    end_str,
         "securityToken": token,
     }
     for attempt in range(3):
@@ -290,8 +290,9 @@ def fetch_all_records(dataset, area, start="2020-01-01", end=None):
 
 
 def fetch_dk_production_today(area):
-    """Henter dagens sol og vind fra ElectricityProdex5MinRealtime."""
-    today = current_date.strftime("%Y-%m-%dT00:00")
+    """Henter sol og vind for de seneste 2 timer fra ElectricityProdex5MinRealtime."""
+    now = datetime.utcnow()
+    start = (now - timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M")
     
     all_records = []
     offset = 0
@@ -302,7 +303,7 @@ def fetch_dk_production_today(area):
                     "https://api.energidataservice.dk/dataset/ElectricityProdex5MinRealtime",
                     params={
                         "filter": f'{{"PriceArea":"{area}"}}',
-                        "start": today,
+                        "start": start,
                         "limit": 1000,
                         "offset": offset,
                         "sort": "Minutes5UTC asc",
@@ -341,7 +342,7 @@ def fetch_dk_production_today(area):
         return {}
 
     return {
-        "Solar":        round(solar_total / count, 2),
+        "Solar":         round(solar_total / count, 2),
         "Wind Offshore": round(offshore_total / count, 2),
         "Wind Onshore":  round(onshore_total / count, 2),
     }
@@ -349,10 +350,14 @@ def fetch_dk_production_today(area):
 def collect_generation_mix():
     print("Henter generation mix...")
     date_str = current_date.strftime("%Y-%m-%d")
-    rows = []
+    rows = []  # ← mangler denne linje
+    now = datetime.utcnow()
+    start_str = (now - timedelta(hours=2)).strftime("%Y%m%d%H%M")
+    end_str = now.strftime("%Y%m%d%H%M")
+    
     for area, config in DK_NEIGHBORS.items():
         eic = config["eic"]
-        gen_mix = fetch_generation_mix(eic, date_str, ENTSOE_TOKEN)
+        gen_mix = fetch_generation_mix(eic, start_str, end_str, ENTSOE_TOKEN)
         print(f"  {area} gen_mix: {gen_mix}")
         for psr_name, avg_mw in gen_mix.items():
             rows.append({
@@ -374,7 +379,7 @@ def collect_generation_mix():
                     "is_import": False,
                 })
         for neighbor_name, neighbor_eic in config["neighbors"].items():
-            imp = fetch_physical_flows(neighbor_eic, eic, date_str, ENTSOE_TOKEN)
+            imp = fetch_physical_flows(neighbor_eic, eic, start_str, end_str, ENTSOE_TOKEN)
             print(f"  {area} ← {neighbor_name}: imp={imp:.0f}")
             if imp > 0:
                 rows.append({
