@@ -29,15 +29,17 @@ DK_NEIGHBORS = {
         "eic": "10YDK-1--------W",
         "neighbors": {
             "NO2": "10YNO-2--------T",
-            "DE":  "10Y1001A1001A82H",
+            "DE":  "10Y1001A1001A83F",  # ← ret denne
+            "NL":  "10YNL----------L",  # ← tilføj Holland
             "DK2": "10YDK-2--------M",
+            "SE3": "10Y1001A1001A46L",  # ← tilføj Sverige SE3
         }
     },
     "DK2": {
         "eic": "10YDK-2--------M",
         "neighbors": {
             "SE4": "10Y1001A1001A47J",
-            "DE":  "10Y1001A1001A63L",
+            "DE":  "10Y1001A1001A83F",  # ← ret denne
             "DK1": "10YDK-1--------W",
         }
     }
@@ -354,6 +356,13 @@ def collect_generation_mix():
     now = datetime.utcnow()
     start_str = (now - timedelta(hours=2)).strftime("%Y%m%d%H%M")
     end_str = now.strftime("%Y%m%d%H%M")
+
+    EXCLUDE_FROM_ENTSOE = {"Solar", "Wind Offshore", "Wind Onshore"}
+
+    for psr_name, avg_mw in gen_mix.items():
+        if psr_name in EXCLUDE_FROM_ENTSOE:
+            continue
+        rows.append({...})
     
     for area, config in DK_NEIGHBORS.items():
         eic = config["eic"]
