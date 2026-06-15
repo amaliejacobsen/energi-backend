@@ -220,6 +220,44 @@ def fetch_generation_mix(eic, date_str, token):
 
     return {psr: result[psr] / counts[psr] for psr in result if counts[psr] > 0}
 
+def fetch_all_records(dataset, area, start="2020-01-01"):
+    all_records = []
+    limit = 10000
+    offset = 0
+    sort_column = "TimeDK" if dataset == "DayAheadPrices" else "HourDK"
+    while True:
+        try:
+            r = requests.get(f"https://api.energidataservice.dk/dataset/{dataset}", params={
+                "start": start,
+                "end": end,
+                "filter": f'{{"PriceArea":"{area}"}}',
+                "limit": limit,
+                "offset": offset,
+                "sort": f"{sort_column} asc",
+            }, timeout=30)
+            
+            if r.status_code == 429:
+                print(f"  Rate limit ramt for {dataset} ({area}) ved offset {offset}, venter 30s...")
+                time.sleep(30)
+                continue
+                
+            r.raise_for_status()
+            if not r.text.strip():
+                break
+            data = r.json()
+            records = data.get("records", [])
+            if not records:
+                break
+            all_records.extend(records)
+            if len(records) < limit:
+                break
+            offset += limit
+            time.sleep(2)  # Øget fra 0.3 til 2 sekunder
+        except Exception as e:
+            print(f"Fejl ved hentning af {dataset} ({area}): {e}")
+            break
+    return all_records
+
 
 def fetch_dk_production_today(area):
     """Henter dagens sol og vind fra Energidataservice."""
