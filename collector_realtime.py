@@ -225,6 +225,7 @@ def fetch_all_records(dataset, area, start="2020-01-01"):
     limit = 10000
     offset = 0
     sort_column = "TimeDK" if dataset == "DayAheadPrices" else "HourDK"
+    rate_limit_attempts = 0
     while True:
         try:
             r = requests.get(f"https://api.energidataservice.dk/dataset/{dataset}", params={
@@ -237,9 +238,14 @@ def fetch_all_records(dataset, area, start="2020-01-01"):
             }, timeout=30)
             
             if r.status_code == 429:
+                rate_limit_attempts += 1   # <--- TÆL OP HER
+                ventetid = 60 * rate_limit_attempts  # Giver 60s, 120s, 180s osv.
                 print(f"  Rate limit ramt for {dataset} ({area}) ved offset {offset}, venter 30s...")
-                time.sleep(30)
+                time.sleep(ventetid)
                 continue
+            rate_limit_attempts = 0 
+            
+            r.raise_for_status()
                 
             r.raise_for_status()
             if not r.text.strip():
