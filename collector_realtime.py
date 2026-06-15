@@ -24,6 +24,24 @@ PSR_NAMES = {
     "B18": "Waste", "B19": "Other", "B20": "Marine",
 }
 
+DK_NEIGHBORS = {
+    "DK1": {
+        "eic": "10YDK-1--------W",
+        "neighbors": {
+            "NO2": "10YNO-2--------T",
+            "DE":  "10Y1001A1001A82H",
+            "DK2": "10YDK-2--------M",
+        }
+    },
+    "DK2": {
+        "eic": "10YDK-2--------M",
+        "neighbors": {
+            "SE4": "10Y1001A1001A47J",
+            "DE":  "10Y1001A1001A63L",
+            "DK1": "10YDK-1--------W",
+        }
+    }
+}
 
 def collect_realtid_dk_hourly():
     print("Henter realtid data...")
