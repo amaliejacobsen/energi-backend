@@ -343,7 +343,11 @@ def fetch_dk_production_today(area):
     if count == 0:
         print(f"  -> Ingen rækker for {area}")
         return {}
-
+    
+    # ← INDSÆT HER
+    print(f"  Antal rækker for {area}: {len(all_records)}")
+    print(f"  Eksempel række: {all_records[0] if all_records else 'ingen'}")
+    
     return {
         "Solar":         round(solar_total / count, 2),
         "Wind Offshore": round(offshore_total / count, 2),
