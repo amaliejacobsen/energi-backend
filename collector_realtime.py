@@ -1,6 +1,8 @@
 import requests
+import xml.etree.ElementTree as ET
 import time
 from datetime import datetime, timedelta
+from collections import defaultdict
 from supabase import create_client
 import os
 
@@ -8,16 +10,32 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 supabase     = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+ENTSOE_TOKEN = os.environ.get("ENTSOE_TOKEN", "138899c3-59b3-48ef-9dfd-03406794210d")
+ENTSOE_URL   = "https://web-api.tp.entsoe.eu/api"
+
+current_date = datetime.today()
+
+PSR_NAMES = {
+    "B01": "Biomass", "B02": "Fossil Brown coal/Lignite", "B03": "Fossil Coal-derived gas",
+    "B04": "Fossil Gas", "B05": "Fossil Hard coal", "B06": "Fossil Oil",
+    "B09": "Hydro Pumped Storage", "B10": "Hydro Run-of-river",
+    "B11": "Hydro Water Reservoir", "B12": "Wind Offshore", "B13": "Wind Onshore",
+    "B14": "Solar", "B16": "Nuclear", "B17": "Other renewable",
+    "B18": "Waste", "B19": "Other", "B20": "Marine",
+}
+
+
 def collect_realtid_dk_hourly():
     print("Henter realtid data...")
-    
+
     from_dt = (datetime.utcnow() - timedelta(hours=48)).strftime("%Y-%m-%dT%H:%M")
     rows_per_area = {"DK1": {}, "DK2": {}}
-    
+
     for area in ["DK1", "DK2"]:
         offset = 0
         while True:
-            for attempt in range(5):  # ← retry loop
+            r = None
+            for attempt in range(5):
                 try:
                     r = requests.get(
                         "https://api.energidataservice.dk/dataset/ElectricityBalanceNonv",
@@ -30,11 +48,6 @@ def collect_realtid_dk_hourly():
                         },
                         timeout=30
                     )
-                    rec = r.json()["records"][0]
-                    print("Solar:", rec.get("SolarPower"))
-                    print("Offshore:", rec.get("OffshoreWindPower"))
-                    print("Onshore:", rec.get("OnshoreWindPower"))
-                    print("Consumption:", rec.get("GrossConsumption"))
                     if r.status_code == 429:
                         print(f"  Rate limit, venter 30s...")
                         time.sleep(30)
@@ -44,38 +57,41 @@ def collect_realtid_dk_hourly():
                 except Exception as e:
                     print(f"  Fejl: {e}, venter 15s...")
                     time.sleep(15)
-            
+
+            if r is None:
+                break
+
             records = r.json().get("records", [])
             if not records:
                 break
-            
+
             for rec in records:
                 dt_str = rec["HourDK"].replace("Z", "")
                 dt_dk = datetime.fromisoformat(dt_str)
-                dt_iso = dt_dk.isoformat()  # ← behold dansk tid med +00:00 format
+                dt_iso = dt_dk.isoformat()
                 rows_per_area[area][dt_iso] = {
                     "solar":       rec.get("SolarPower", 0) or 0,
                     "offshore":    rec.get("OffshoreWindPower", 0) or 0,
                     "onshore":     rec.get("OnshoreWindPower", 0) or 0,
                     "consumption": rec.get("GrossConsumption", 0) or 0,
                 }
-            
+
             if len(records) < 1000:
                 break
             offset += 1000
             time.sleep(2)
-    
+
     for area, timepoints in rows_per_area.items():
         rows = []
         for dt_str, vals in timepoints.items():
             for source in ["solar", "offshore", "onshore", "consumption"]:
                 rows.append({
-                    "area": area,
-                    "source": source,
-                    "datetime": dt_str,
+                    "area":      area,
+                    "source":    source,
+                    "datetime":  dt_str,
                     "value_mwh": round(vals[source], 3),
                 })
-        
+
         if rows:
             for i in range(0, len(rows), 1000):
                 supabase.table("dk_production_hourly").upsert(
@@ -89,23 +105,23 @@ DK_NEIGHBORS = {
     "DK1": {
         "eic": "10YDK-1--------W",
         "neighbors": {
-            "NO2":     "10YNO-2--------T",
-            "DE":      "10Y1001A1001A82H",
-            "DK2":     "10YDK-2--------M",
+            "NO2": "10YNO-2--------T",
+            "DE":  "10Y1001A1001A82H",
+            "DK2": "10YDK-2--------M",
         }
     },
     "DK2": {
         "eic": "10YDK-2--------M",
         "neighbors": {
-            "SE4":     "10Y1001A1001A47J",
-            "DE":      "10Y1001A1001A63L",
-            "DK1":     "10YDK-1--------W",
+            "SE4": "10Y1001A1001A47J",
+            "DE":  "10Y1001A1001A63L",
+            "DK1": "10YDK-1--------W",
         }
     }
 }
 
+
 def fetch_physical_flows(in_eic, out_eic, date_str, token):
-    """Henter fysiske flows fra in_Domain til out_Domain for en given dato."""
     params = {
         "documentType": "A11",
         "in_Domain":    in_eic,
@@ -151,8 +167,8 @@ def fetch_physical_flows(in_eic, out_eic, date_str, token):
                     continue
     return total / count if count > 0 else 0
 
+
 def fetch_generation_mix(eic, date_str, token):
-    """Henter lokal produktionsmix (A75) for et prisområde."""
     params = {
         "documentType": "A75",
         "processType":  "A16",
@@ -204,6 +220,7 @@ def fetch_generation_mix(eic, date_str, token):
 
     return {psr: result[psr] / counts[psr] for psr in result if counts[psr] > 0}
 
+
 def collect_generation_mix():
     print("Henter generation mix...")
     date_str = current_date.strftime("%Y-%m-%d")
@@ -212,18 +229,16 @@ def collect_generation_mix():
     for area, config in DK_NEIGHBORS.items():
         eic = config["eic"]
 
-        # Lokal produktion
         gen_mix = fetch_generation_mix(eic, date_str, ENTSOE_TOKEN)
         for psr_name, avg_mw in gen_mix.items():
             rows.append({
-                "area":     area,
-                "date":     date_str,
-                "source":   psr_name,
-                "avg_mw":   round(avg_mw, 2),
+                "area":      area,
+                "date":      date_str,
+                "source":    psr_name,
+                "avg_mw":    round(avg_mw, 2),
                 "is_import": False,
             })
 
-        # Import fra nabolande
         for neighbor_name, neighbor_eic in config["neighbors"].items():
             imp = fetch_physical_flows(neighbor_eic, eic, date_str, ENTSOE_TOKEN)
             exp = fetch_physical_flows(eic, neighbor_eic, date_str, ENTSOE_TOKEN)
@@ -244,7 +259,8 @@ def collect_generation_mix():
             rows, on_conflict="area,date,source"
         ).execute()
         print(f"Generation mix gemt ({len(rows)} rækker).")
-        
+
+
 if __name__ == "__main__":
     print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
     collect_realtid_dk_hourly()
