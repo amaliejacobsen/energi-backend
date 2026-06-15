@@ -346,6 +346,13 @@ def fetch_dk_production_today(area):
 
     # Tag KUN den seneste række
     latest = all_records[-1]
+    
+    # DEBUG
+    solar_sum = sum(rec.get("SolarPower", 0) or 0 for rec in all_records)
+    print(f"  {area} solar sum over alle rækker: {solar_sum:.0f} MW-sum, seneste: {all_records[-1].get('SolarPower')}")
+    print(f"  {area} første række PriceArea felt: '{all_records[0].get('PriceArea')}'")
+    
+    print(f"  Seneste måling for {area}: {latest['Minutes5DK']} → Solar={latest.get('SolarPower')}, ...")
     print(f"  Seneste måling for {area}: {latest['Minutes5DK']} → Solar={latest.get('SolarPower')}, Offshore={latest.get('OffshoreWindPower')}, Onshore={latest.get('OnshoreWindPower')}")
 
     return {
