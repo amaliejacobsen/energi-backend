@@ -271,38 +271,61 @@ def fetch_all_records(dataset, area, start="2020-01-01", end=None):
 
 
 def fetch_dk_production_today(area):
-    """Henter dagens sol og vind i REEL REALTID fra ElectricityBalanceNonv."""
+    """Henter dagens sol og vind fra ElectricityProdex5MinRealtime."""
     today = current_date.strftime("%Y-%m-%dT00:00")
     
-    # Debug print: Se præcis hvilken dato koden spørger efter data fra
-    print(f"  -> [DEBUG] Henter sol/vind for {area} med start: {today}")
-    
-    records = fetch_all_records("ElectricityBalanceNonv", area, start=today)
-    
-    # Debug print: Se hvor mange rækker API'et rent faktisk returnerede
-    print(f"  -> [DEBUG] Modtog {len(records)} rækker fra API'et for {area}")
-    
+    all_records = []
+    offset = 0
+    while True:
+        for attempt in range(5):
+            try:
+                r = requests.get(
+                    "https://api.energidataservice.dk/dataset/ElectricityProdex5MinRealtime",
+                    params={
+                        "filter": f'{{"PriceArea":"{area}"}}',
+                        "start": today,
+                        "limit": 1000,
+                        "offset": offset,
+                        "sort": "Minutes5UTC asc",
+                    },
+                    timeout=30
+                )
+                if r.status_code == 429:
+                    wait = 60 * (attempt + 1)
+                    print(f"  Rate limit, venter {wait}s...")
+                    time.sleep(wait)
+                    continue
+                r.raise_for_status()
+                break
+            except Exception as e:
+                print(f"  Fejl: {e}, venter 15s...")
+                time.sleep(15)
+        
+        records = r.json().get("records", [])
+        if not records:
+            break
+        all_records.extend(records)
+        if len(records) < 1000:
+            break
+        offset += 1000
+        time.sleep(2)
+
     solar_total, offshore_total, onshore_total, count = 0, 0, 0, 0
-    
-    for rec in records:
-        solar_total += rec.get("SolarPower", 0) or 0
+    for rec in all_records:
+        solar_total    += rec.get("SolarPower", 0) or 0
         offshore_total += rec.get("OffshoreWindPower", 0) or 0
-        onshore_total += rec.get("OnshoreWindPower", 0) or 0
+        onshore_total  += rec.get("OnshoreWindPower", 0) or 0
         count += 1
-        
+
     if count == 0:
-        print(f"  -> [DEBUG] Ingen rækker at beregne for {area}, returnerer tomt.")
+        print(f"  -> Ingen rækker for {area}")
         return {}
-        
-    res = {
-        "Solar": round(solar_total / count, 2),
+
+    return {
+        "Solar":        round(solar_total / count, 2),
         "Wind Offshore": round(offshore_total / count, 2),
-        "Wind Onshore": round(onshore_total / count, 2),
+        "Wind Onshore":  round(onshore_total / count, 2),
     }
-    
-    # Debug print: Se hvad resultatet af beregningen blev
-    print(f"  -> [DEBUG] Beregnet snit for {area}: {res}")
-    return res
 
 def collect_generation_mix():
     print("Henter generation mix...")
