@@ -1,7 +1,7 @@
 name: Realtime collector
 on:
   schedule:
-    - cron: '*/15 * * * *'  # hvert 15. minut
+    - cron: '*/30 * * * *'  # hvert 30. minut
   workflow_dispatch:
 jobs:
   collect:
@@ -16,3 +16,4 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          ENTSOE_TOKEN: ${{ secrets.ENTSOE_TOKEN }}
