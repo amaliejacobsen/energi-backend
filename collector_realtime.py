@@ -230,6 +230,7 @@ def collect_generation_mix():
         eic = config["eic"]
 
         gen_mix = fetch_generation_mix(eic, date_str, ENTSOE_TOKEN)
+        print(f"  {area} gen_mix: {gen_mix}")
         for psr_name, avg_mw in gen_mix.items():
             rows.append({
                 "area":      area,
@@ -263,24 +264,6 @@ def collect_generation_mix():
 
 if __name__ == "__main__":
     print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
-    
-    # TEST - slet efter brug
-    r = requests.get(
-        "https://api.energidataservice.dk/dataset/ElectricityBalanceNonv",
-        params={
-            "filter": '{"PriceArea":"DK1"}',
-            "limit": 1,
-            "sort": "HourUTC desc",
-        },
-        timeout=30
-    )
-    data = r.json()
-    if data.get("records"):
-        rec = data["records"][0]
-        print(f"Seneste ElectricityBalanceNonv: {rec.get('HourDK')}")
-        print(f"Solar: {rec.get('SolarPower')}")
-        print(f"Offshore: {rec.get('OffshoreWindPower')}")
-    
     collect_realtid_dk_hourly()
     collect_generation_mix()
     print(f"\nFærdig: {datetime.now()}\n{'='*40}")
