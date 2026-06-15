@@ -375,15 +375,13 @@ def collect_generation_mix():
                 })
         for neighbor_name, neighbor_eic in config["neighbors"].items():
             imp = fetch_physical_flows(neighbor_eic, eic, date_str, ENTSOE_TOKEN)
-            exp = fetch_physical_flows(eic, neighbor_eic, date_str, ENTSOE_TOKEN)
-            net_import = imp - exp
-            print(f"  {area} ← {neighbor_name}: imp={imp:.0f} exp={exp:.0f} net={net_import:.0f}")
-            if net_import > 0:
+            print(f"  {area} ← {neighbor_name}: imp={imp:.0f}")
+            if imp > 0:
                 rows.append({
                     "area":      area,
                     "date":      date_str,
                     "source":    f"Fra {neighbor_name}",
-                    "avg_mw":    round(net_import, 2),
+                    "avg_mw":    round(imp, 2),
                     "is_import": True,
                 })
             time.sleep(1)
