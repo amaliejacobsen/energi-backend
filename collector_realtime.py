@@ -326,7 +326,8 @@ def fetch_dk_production_today(area):
         records = r.json().get("records", [])
         if not records:
             break
-        all_records.extend(records)
+        # ← Filtrer kun rækker der matcher area
+        all_records.extend([rec for rec in records if rec.get("PriceArea") == area])
         if len(records) < 1000:
             break
         offset += 1000
@@ -348,6 +349,8 @@ def fetch_dk_production_today(area):
         "Wind Offshore": round(offshore_total / count, 2),
         "Wind Onshore":  round(onshore_total / count, 2),
     }
+
+
 
 def collect_generation_mix():
     print("Henter generation mix...")
