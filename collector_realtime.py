@@ -334,10 +334,10 @@ def collect_generation_mix():
                 })
             time.sleep(1)
     if rows:
-        # RETTELSE 4: Tilføjet et synligt log-print, så du rent faktisk kan se dit mix i terminalen
+        # RETTET: Det mærkelige tegn er fjernet fra f-stringen herunder
         print("\n--- GENERATION MIX DATA DER SENDES TIL SUPABASE ---")
         for r in rows:
-            print(f"Area: {r['area']} | Source: {r['source']:<22} | MW: {r['avg_mw']選択:<8} | Import: {r['is_import']}")
+            print(f"Area: {r['area']} | Source: {r['source']:<22} | MW: {r['avg_mw']:<8} | Import: {r['is_import']}")
         print("---------------------------------------------------\n")
 
         supabase.table("generation_mix").upsert(
