@@ -1,8 +1,7 @@
 name: Collect Data
 on:
   schedule:
-    - cron: '0 6 * * *'   # Kører hver dag kl. 6
-    - cron: '0 12 * * *'  # Kører hver dag kl. 12
+    - cron: '0 6 15 * *'  # Kl. 6 den 15. hver måned
   workflow_dispatch:
 jobs:
   collect:
