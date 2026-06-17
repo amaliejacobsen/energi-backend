@@ -364,13 +364,16 @@ def fetch_dk_production_today(area):
 
 def collect_generation_mix():
     print("Henter generation mix fra SysPower...")
-    
+
     today = datetime.utcnow()
     date_str = today.strftime("%Y-%m-%d")
     today_sp = today.strftime("%d.%m.%Y")
-    
-    SYSPOWER_TOKEN = os.environ.get("SYSPOWER_TOKEN", "LIPhyBZjn63NJ7n3")
-    
+
+    SYSPOWER_TOKEN = os.environ.get("SYSPOWER_TOKEN")
+    if not SYSPOWER_TOKEN:
+        print("  SYSPOWER_TOKEN er ikke sat (secret mangler eller er tom) - afbryder.")
+        return
+
     SERIES = [
         "PRODK1SOL_ENTSOE", "PRODK2SOL_ENTSOE",
         "PRODK1WINDOFF_ENTSOE", "PRODK1WINDON_ENTSOE",
@@ -382,7 +385,7 @@ def collect_generation_mix():
         "PRODK2OIL_ENTSOE", "PRODK2WASTE_ENTSOE",
         "PRODK2HCL_ENTSOE",
     ]
-    
+
     try:
         r = requests.get(
             "https://syspower5.skm.no/api/webquery/execute",
@@ -391,7 +394,7 @@ def collect_generation_mix():
                 "series": ",".join(SERIES),
                 "start": today_sp,
                 "end": today_sp,
-                "interval": "day",
+                "interval": "hour",
                 "token": SYSPOWER_TOKEN,
                 "emptydata": "no",
             },
@@ -403,26 +406,24 @@ def collect_generation_mix():
         print(f"  Fejl ved hentning fra SysPower: {e}")
         return
 
-    headers = data.get("headers", [])
     records = data.get("data", [])
-    
     if not records:
         print("  Ingen data fra SysPower for i dag.")
         return
-    
-    # Tag seneste række (i dag)
-    row = records[-1]
-    print(f"  SysPower data for: {row[0]}")
-    
-    # Map header → værdi (GWh/dag → MW: × 1000 / 24)
-    def ghw_to_mw(val):
-        if val is None:
-            return 0.0
-        return round(float(val) * 1000 / 24, 2)
-    
-    values = {headers[i]: ghw_to_mw(row[i]) for i in range(1, len(headers)) if i < len(row)}
-    
-    # Byg rækker per område
+
+    # "headers" er tom i svaret, så vi mapper kolonner via SERIES-rækkefølgen i stedet.
+    # row[0] = tidsstempel, row[1:] matcher SERIES i samme rækkefølge som sendt.
+    sums = defaultdict(float)
+    counts = defaultdict(int)
+    for row in records:
+        for idx, series_key in enumerate(SERIES, start=1):
+            if idx < len(row) and row[idx] is not None:
+                sums[series_key] += float(row[idx])
+                counts[series_key] += 1
+
+    # Gennemsnit pr. serie for dagens timer indtil nu (allerede i MW, ingen GWh-konvertering)
+    values = {k: round(sums[k] / counts[k], 2) for k in sums if counts[k] > 0}
+
     MAPPING = {
         "DK1": {
             "Solar":         "PRODK1SOL_ENTSOE",
@@ -446,7 +447,7 @@ def collect_generation_mix():
             "Fossil Hard coal": "PRODK2HCL_ENTSOE",
         },
     }
-    
+
     rows = []
     for area, sources in MAPPING.items():
         for source, series_key in sources.items():
@@ -459,11 +460,11 @@ def collect_generation_mix():
                     "avg_mw":    avg_mw,
                     "is_import": False,
                 })
-    
+
     if rows:
         print("\n--- GENERATION MIX DATA DER SENDES TIL SUPABASE ---")
-        for r in rows:
-            print(f"Area: {r['area']} | Source: {r['source']:<22} | MW: {r['avg_mw']:<8}")
+        for row in rows:
+            print(f"Area: {row['area']} | Source: {row['source']:<22} | MW: {row['avg_mw']:<8}")
         print("---------------------------------------------------\n")
         supabase.table("generation_mix").upsert(
             rows, on_conflict="area,date,source"
