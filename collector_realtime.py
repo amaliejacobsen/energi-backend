@@ -434,7 +434,7 @@ def collect_generation_mix():
                     sums[series_key] += float(row[idx])
                     counts[series_key] += 1
 
-    values = {k: round(sums[k] / counts[k], 2) for k in sums if counts[k] > 0}
+    values = {k: round((sums[k] / counts[k]) * 1000, 2) for k in sums if counts[k] > 0}
 
     MAPPING = {
         "DK1": {
