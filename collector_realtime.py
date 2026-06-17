@@ -396,7 +396,8 @@ def collect_generation_mix():
                 "end": today_sp,
                 "interval": "hour",
                 "token": SYSPOWER_TOKEN,
-                "emptydata": "no",
+                "emptydata": "yes",   # ← ændret fra "no": vis tomme/0-værdier i stedet for at udelade kolonner
+                "headers": "yes",     # ← tilføjet: bed API'et om at sende rigtige kolonnenavne
             },
             timeout=30
         )
@@ -406,22 +407,31 @@ def collect_generation_mix():
         print(f"  Fejl ved hentning fra SysPower: {e}")
         return
 
+    headers = data.get("headers", [])
     records = data.get("data", [])
+
     if not records:
         print("  Ingen data fra SysPower for i dag.")
         return
 
-    # "headers" er tom i svaret, så vi mapper kolonner via SERIES-rækkefølgen i stedet.
-    # row[0] = tidsstempel, row[1:] matcher SERIES i samme rækkefølge som sendt.
     sums = defaultdict(float)
     counts = defaultdict(int)
-    for row in records:
-        for idx, series_key in enumerate(SERIES, start=1):
-            if idx < len(row) and row[idx] is not None:
-                sums[series_key] += float(row[idx])
-                counts[series_key] += 1
 
-    # Gennemsnit pr. serie for dagens timer indtil nu (allerede i MW, ingen GWh-konvertering)
+    if headers and len(headers) > 1:
+        print("  Bruger headers fra API-svar til mapping.")
+        for row in records:
+            for i in range(1, len(headers)):
+                if i < len(row) and row[i] is not None:
+                    sums[headers[i]] += float(row[i])
+                    counts[headers[i]] += 1
+    else:
+        print("  Ingen headers i svar - falder tilbage til positionsmapping.")
+        for row in records:
+            for idx, series_key in enumerate(SERIES, start=1):
+                if idx < len(row) and row[idx] is not None:
+                    sums[series_key] += float(row[idx])
+                    counts[series_key] += 1
+
     values = {k: round(sums[k] / counts[k], 2) for k in sums if counts[k] > 0}
 
     MAPPING = {
@@ -456,7 +466,7 @@ def collect_generation_mix():
                 "area":      area,
                 "date":      date_str,
                 "source":    source,
-                "avg_mw":    avg_mw,  # kan nu være 0.0
+                "avg_mw":    avg_mw,
                 "is_import": False,
             })
 
@@ -471,7 +481,6 @@ def collect_generation_mix():
         print(f"Generation mix gemt ({len(rows)} rækker).")
     else:
         print("  Ingen rækker at gemme.")
-
 
 if __name__ == "__main__":
     print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
