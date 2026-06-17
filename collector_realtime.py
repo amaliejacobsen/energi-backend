@@ -409,6 +409,8 @@ def collect_generation_mix():
 
     headers = data.get("headers", [])
     records = data.get("data", [])
+    print(f"  DEBUG headers: {headers}")
+    print(f"  DEBUG første datarække: {records[0] if records else 'ingen'}"
 
     if not records:
         print("  Ingen data fra SysPower for i dag.")
