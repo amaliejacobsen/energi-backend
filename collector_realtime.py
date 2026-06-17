@@ -12,7 +12,6 @@ supabase     = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 ENTSOE_TOKEN = os.environ.get("ENTSOE_TOKEN", "138899c3-59b3-48ef-9dfd-03406794210d")
 ENTSOE_URL   = "https://web-api.tp.entsoe.eu/api"
-SYSPOWER_TOKEN: ${{ secrets.SYSPOWER_TOKEN }}
 
 current_date = datetime.today()
 
