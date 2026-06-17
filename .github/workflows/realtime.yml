@@ -17,3 +17,4 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           ENTSOE_TOKEN: ${{ secrets.ENTSOE_TOKEN }}
+          SYSPOWER_TOKEN: ${{ secrets.SYSPOWER_TOKEN }}
