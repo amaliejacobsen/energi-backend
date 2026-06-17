@@ -12,6 +12,7 @@ supabase     = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 ENTSOE_TOKEN = os.environ.get("ENTSOE_TOKEN", "138899c3-59b3-48ef-9dfd-03406794210d")
 ENTSOE_URL   = "https://web-api.tp.entsoe.eu/api"
+SYSPOWER_TOKEN: ${{ secrets.SYSPOWER_TOKEN }}
 
 current_date = datetime.today()
 
@@ -363,33 +364,94 @@ def fetch_dk_production_today(area):
 
 
 def collect_generation_mix():
-    print("Henter generation mix...")
-    date_str = current_date.strftime("%Y-%m-%d")
-    rows = []
-    now = datetime.utcnow()
-    start_str = (now - timedelta(hours=2)).strftime("%Y%m%d%H%M")
-    end_str = now.strftime("%Y%m%d%H%M")
-    EXCLUDE_FROM_ENTSOE = set()  # ← midlertidigt tom for at teste
+    print("Henter generation mix fra SysPower...")
+    
+    today = datetime.utcnow()
+    date_str = today.strftime("%Y-%m-%d")
+    today_sp = today.strftime("%d.%m.%Y")
+    
+    SYSPOWER_TOKEN = os.environ.get("SYSPOWER_TOKEN", "LIPhyBZjn63NJ7n3")
+    
+    SERIES = [
+        "PRODK1SOL_ENTSOE", "PRODK2SOL_ENTSOE",
+        "PRODK1WINDOFF_ENTSOE", "PRODK1WINDON_ENTSOE",
+        "PRODK2WINDOFF_ENTSOE", "PRODK2WINDON_ENTSOE",
+        "PRODK1RNO_ENTSOE", "PRODK1BIO_ENTSOE",
+        "PRODK1GAS_ENTSOE", "PRODK1HCL_ENTSOE",
+        "PRODK1OIL_ENTSOE", "PRODK1WASTE_ENTSOE",
+        "PRODK2BIO_ENTSOE", "PRODK2GAS_ENTSOE",
+        "PRODK2OIL_ENTSOE", "PRODK2WASTE_ENTSOE",
+        "PRODK2HCL_ENTSOE",
+    ]
+    
+    try:
+        r = requests.get(
+            "https://syspower5.skm.no/api/webquery/execute",
+            params={
+                "fileformat": "json",
+                "series": ",".join(SERIES),
+                "start": today_sp,
+                "end": today_sp,
+                "interval": "day",
+                "token": SYSPOWER_TOKEN,
+                "emptydata": "no",
+            },
+            timeout=30
+        )
+        r.raise_for_status()
+        data = r.json()
+    except Exception as e:
+        print(f"  Fejl ved hentning fra SysPower: {e}")
+        return
 
-    for area, config in DK_NEIGHBORS.items():
-        eic = config["eic"]
-        gen_mix = fetch_generation_mix(eic, start_str, end_str, ENTSOE_TOKEN)
-        if not gen_mix:
-            print(f"  Ingen gen_mix data for {area}, springer over.")
-            continue
-        print(f"  {area} gen_mix: {gen_mix}")
-        for psr_name, avg_mw in gen_mix.items():
-            if psr_name in EXCLUDE_FROM_ENTSOE:
-                continue
-            rows.append({
-                "area":      area,
-                "date":      date_str,
-                "source":    psr_name,
-                "avg_mw":    round(avg_mw, 2),
-                "is_import": False,
-            })
-        dk_prod = fetch_dk_production_today(area)
-        for source, avg_mw in dk_prod.items():
+    headers = data.get("headers", [])
+    records = data.get("data", [])
+    
+    if not records:
+        print("  Ingen data fra SysPower for i dag.")
+        return
+    
+    # Tag seneste række (i dag)
+    row = records[-1]
+    print(f"  SysPower data for: {row[0]}")
+    
+    # Map header → værdi (GWh/dag → MW: × 1000 / 24)
+    def ghw_to_mw(val):
+        if val is None:
+            return 0.0
+        return round(float(val) * 1000 / 24, 2)
+    
+    values = {headers[i]: ghw_to_mw(row[i]) for i in range(1, len(headers)) if i < len(row)}
+    
+    # Byg rækker per område
+    MAPPING = {
+        "DK1": {
+            "Solar":         "PRODK1SOL_ENTSOE",
+            "Wind Offshore": "PRODK1WINDOFF_ENTSOE",
+            "Wind Onshore":  "PRODK1WINDON_ENTSOE",
+            "Renewable other": "PRODK1RNO_ENTSOE",
+            "Biomass":       "PRODK1BIO_ENTSOE",
+            "Fossil Gas":    "PRODK1GAS_ENTSOE",
+            "Fossil Hard coal": "PRODK1HCL_ENTSOE",
+            "Fossil Oil":    "PRODK1OIL_ENTSOE",
+            "Waste":         "PRODK1WASTE_ENTSOE",
+        },
+        "DK2": {
+            "Solar":         "PRODK2SOL_ENTSOE",
+            "Wind Offshore": "PRODK2WINDOFF_ENTSOE",
+            "Wind Onshore":  "PRODK2WINDON_ENTSOE",
+            "Biomass":       "PRODK2BIO_ENTSOE",
+            "Fossil Gas":    "PRODK2GAS_ENTSOE",
+            "Fossil Oil":    "PRODK2OIL_ENTSOE",
+            "Waste":         "PRODK2WASTE_ENTSOE",
+            "Fossil Hard coal": "PRODK2HCL_ENTSOE",
+        },
+    }
+    
+    rows = []
+    for area, sources in MAPPING.items():
+        for source, series_key in sources.items():
+            avg_mw = values.get(series_key, 0.0)
             if avg_mw > 0:
                 rows.append({
                     "area":      area,
@@ -398,31 +460,18 @@ def collect_generation_mix():
                     "avg_mw":    avg_mw,
                     "is_import": False,
                 })
-        for neighbor_name, neighbor_eic in config["neighbors"].items():
-            try:
-                imp = fetch_physical_flows(neighbor_eic, eic, start_str, end_str, ENTSOE_TOKEN)
-                print(f"  {area} ← {neighbor_name}: imp={imp:.0f}")
-                if imp > 0:
-                    rows.append({
-                        "area":      area,
-                        "date":      date_str,
-                        "source":    f"Fra {neighbor_name}",
-                        "avg_mw":    round(imp, 2),
-                        "is_import": True,
-                    })
-            except Exception as e:
-                print(f"  Fejl ved {neighbor_name}, springer over: {e}")
-            time.sleep(2)
-
+    
     if rows:
         print("\n--- GENERATION MIX DATA DER SENDES TIL SUPABASE ---")
         for r in rows:
-            print(f"Area: {r['area']} | Source: {r['source']:<22} | MW: {r['avg_mw']:<8} | Import: {r['is_import']}")
+            print(f"Area: {r['area']} | Source: {r['source']:<22} | MW: {r['avg_mw']:<8}")
         print("---------------------------------------------------\n")
         supabase.table("generation_mix").upsert(
             rows, on_conflict="area,date,source"
         ).execute()
         print(f"Generation mix gemt ({len(rows)} rækker).")
+    else:
+        print("  Ingen rækker at gemme.")
 
 
 if __name__ == "__main__":
