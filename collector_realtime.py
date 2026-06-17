@@ -434,7 +434,17 @@ def collect_generation_mix():
                     sums[series_key] += float(row[idx])
                     counts[series_key] += 1
 
-    values = {k: round((sums[k] / counts[k]) * 1000, 2) for k in sums if counts[k] > 0}
+    SOLAR_SERIES = {"PRODK1SOL_ENTSOE", "PRODK2SOL_ENTSOE"}
+
+    values = {}
+    for k in sums:
+        if counts[k] == 0:
+            continue
+        avg = sums[k] / counts[k]
+        if k in SOLAR_SERIES:
+            values[k] = round(avg, 2)        # ← ingen omregning for sol
+        else:
+            values[k] = round(avg * 1000, 2)  # ← GW til MW for resten
 
     MAPPING = {
         "DK1": {
