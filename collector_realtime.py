@@ -452,14 +452,13 @@ def collect_generation_mix():
     for area, sources in MAPPING.items():
         for source, series_key in sources.items():
             avg_mw = values.get(series_key, 0.0)
-            if avg_mw > 0:
-                rows.append({
-                    "area":      area,
-                    "date":      date_str,
-                    "source":    source,
-                    "avg_mw":    avg_mw,
-                    "is_import": False,
-                })
+            rows.append({
+                "area":      area,
+                "date":      date_str,
+                "source":    source,
+                "avg_mw":    avg_mw,  # kan nu være 0.0
+                "is_import": False,
+            })
 
     if rows:
         print("\n--- GENERATION MIX DATA DER SENDES TIL SUPABASE ---")
