@@ -128,7 +128,7 @@ def collect_realtid_dk_hourly():
 
 
 def collect_generation_mix():
-    print("Henter generation mix (GenerationProdTypeExchange)...")
+    print("Henter generation mix (GenerationProdTypeExchange) - akkumuleret fra kl. 00...")
     date_str = datetime.utcnow().strftime("%Y-%m-%d")
 
     for area in ["DK1", "DK2"]:
@@ -136,81 +136,93 @@ def collect_generation_mix():
             print("  Pause før DK2...")
             time.sleep(30)
 
-        r = None
-        for attempt in range(5):
-            try:
-                r = requests.get(
-                    "https://api.energidataservice.dk/dataset/GenerationProdTypeExchange",
-                    params={
-                        "filter": f'{{"PriceArea":"{area}"}}',
-                        "start": (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%dT%H:%M"),
-                        "limit": 100,
-                        "sort": "TimeDK desc",
-                    },
-                    timeout=30
-                )
-                if r.status_code == 429:
-                    wait = 30 * (attempt + 1)
-                    print(f"  Rate limit for {area}, venter {wait}s...")
-                    time.sleep(wait)
-                    continue
-                r.raise_for_status()
+        all_records = []
+        offset = 0
+        while True:
+            r = None
+            for attempt in range(5):
+                try:
+                    r = requests.get(
+                        "https://api.energidataservice.dk/dataset/GenerationProdTypeExchange",
+                        params={
+                            "filter": f'{{"PriceArea":"{area}"}}',
+                            "start": f"{date_str}T00:00",
+                            "limit": 1000,
+                            "offset": offset,
+                            "sort": "TimeDK asc",
+                        },
+                        timeout=30
+                    )
+                    if r.status_code == 429:
+                        wait = 30 * (attempt + 1)
+                        print(f"  Rate limit for {area}, venter {wait}s...")
+                        time.sleep(wait)
+                        continue
+                    r.raise_for_status()
+                    break
+                except Exception as e:
+                    print(f"  Fejl for {area}: {e}, venter 15s...")
+                    time.sleep(15)
+            else:
+                print(f"  Alle forsøg fejlede for {area}, springer over.")
                 break
-            except Exception as e:
-                print(f"  Fejl for {area}: {e}, venter 15s...")
-                time.sleep(15)
-        else:
-            print(f"  Alle forsøg fejlede for {area}, springer over.")
-            continue
 
-        records = r.json().get("records", [])
-        if not records:
+            if r is None:
+                break
+
+            records = r.json().get("records", [])
+            if not records:
+                break
+            all_records.extend(records)
+            if len(records) < 1000:
+                break
+            offset += 1000
+            time.sleep(1)
+
+        if not all_records:
             print(f"  Ingen data for {area}")
             continue
 
-        rec = records[0]  # seneste tidspunkt
-        print(f"  {area} tidspunkt: {rec.get('TimeDK')}")
+        print(f"  {area}: {len(all_records)} målinger fra {all_records[0].get('TimeDK')} til {all_records[-1].get('TimeDK')}")
 
-        sources = {
-            "Offshore Wind":  rec.get("OffshoreWindPower", 0) or 0,
-            "Onshore Wind":   rec.get("OnshoreWindPower", 0) or 0,
-            "Solar":          rec.get("SolarPower", 0) or 0,
-            "Hydro":          rec.get("HydroPower", 0) or 0,
-            "Biomass":        rec.get("Biomass", 0) or 0,
-            "Biogas":         rec.get("Biogas", 0) or 0,
-            "Waste":          rec.get("Waste", 0) or 0,
-            "Fossil Gas":     rec.get("FossilGas", 0) or 0,
-            "Fossil Oil":     rec.get("FossilOil", 0) or 0,
-            "Fossil Hard coal": rec.get("FossilHardCoal", 0) or 0,
+        source_fields = {
+            "Offshore Wind":  "OffshoreWindPower",
+            "Onshore Wind":   "OnshoreWindPower",
+            "Solar":          "SolarPower",
+            "Hydro":          "HydroPower",
+            "Biomass":        "Biomass",
+            "Biogas":         "Biogas",
+            "Waste":          "Waste",
+            "Fossil Gas":     "FossilGas",
+            "Fossil Oil":     "FossilOil",
+            "Fossil Hard coal": "FossilHardCoal",
+        }
+        exchange_fields = {
+            "Fra Tyskland":      "ExchangeGermany",
+            "Fra Sverige":       "ExchangeSweden",
+            "Fra Norge":         "ExchangeNorway",
+            "Fra Holland":       "ExchangeNetherlands",
+            "Fra Storbritannien": "ExchangeGreatBritain",
+            "Fra DK1/DK2":       "ExchangeGreatBelt",
         }
 
-        exchanges = {
-            "Fra Tyskland":      rec.get("ExchangeGermany", 0) or 0,
-            "Fra Sverige":       rec.get("ExchangeSweden", 0) or 0,
-            "Fra Norge":         rec.get("ExchangeNorway", 0) or 0,
-            "Fra Holland":       rec.get("ExchangeNetherlands", 0) or 0,
-            "Fra Storbritannien": rec.get("ExchangeGreatBritain", 0) or 0,
-            "Fra DK1/DK2":       rec.get("ExchangeGreatBelt", 0) or 0,
-        }
+        def avg_field(field):
+            vals = [rec.get(field, 0) or 0 for rec in all_records]
+            return sum(vals) / len(vals) if vals else 0
 
         rows = []
-        for source, mw in sources.items():
+        for source, field in source_fields.items():
             rows.append({
-                "area":      area,
-                "date":      date_str,
-                "source":    source,
-                "avg_mw":    round(mw, 2),
-                "is_import": False,
+                "area": area, "date": date_str, "source": source,
+                "avg_mw": round(avg_field(field), 2), "is_import": False,
             })
-        for source, mw in exchanges.items():
-            if mw == 0:
+        for source, field in exchange_fields.items():
+            avg_mw = avg_field(field)
+            if avg_mw == 0:
                 continue
             rows.append({
-                "area":      area,
-                "date":      date_str,
-                "source":    source,
-                "avg_mw":    round(mw, 2),
-                "is_import": mw > 0,
+                "area": area, "date": date_str, "source": source,
+                "avg_mw": round(avg_mw, 2), "is_import": avg_mw > 0,
             })
 
         print(f"\n--- {area} KLAR TIL AT GEMME ---")
