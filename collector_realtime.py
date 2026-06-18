@@ -201,7 +201,8 @@ def collect_generation_mix():
         print("-------------------------\n")
 
         supabase.table("generation_mix").upsert(rows, on_conflict="area,date,source").execute()
-        print("(Gemning er udkommenteret for nu - tjek værdierne først)")
+        print(f"{area} generation mix gemt ({len(rows)} rækker).")
+
 
 if __name__ == "__main__":
     print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
