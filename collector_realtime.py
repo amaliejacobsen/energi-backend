@@ -299,200 +299,102 @@ def fetch_all_records(dataset, area, start="2020-01-01", end=None):
     return all_records
 
 
-def fetch_dk_production_today(area):
-    """Henter sol og vind - seneste tilgængelige måling."""
+def fetch_generation_mix_realtime(eic, token):
+    """Henter seneste tilgængelige A75 generation data (typisk 1-3 timer forsinket)."""
     now = datetime.utcnow()
-    start = (now - timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M")
-    
-    all_records = []
-    offset = 0
-    while True:
-        for attempt in range(5):
-            try:
-                r = requests.get(
-                    "https://api.energidataservice.dk/dataset/ElectricityProdex5MinRealtime",
-                    params={
-                        "filter": f'{{"PriceArea":"{area}"}}',
-                        "start": start,
-                        "limit": 1000,
-                        "offset": offset,
-                        "sort": "Minutes5UTC asc",
-                    },
-                    timeout=30
-                )
-                if r.status_code == 429:
-                    wait = 60 * (attempt + 1)
-                    print(f"  Rate limit, venter {wait}s...")
-                    time.sleep(wait)
-                    continue
-                r.raise_for_status()
-                break
-            except Exception as e:
-                print(f"  Fejl: {e}, venter 15s...")
-                time.sleep(15)
-        
-        records = r.json().get("records", [])
-        if not records:
-            break
-        all_records.extend([rec for rec in records if rec.get("PriceArea") == area])
-        if len(records) < 1000:
-            break
-        offset += 1000
-        time.sleep(2)
+    period_start = (now - timedelta(hours=6)).strftime("%Y%m%d%H00")
+    period_end   = now.strftime("%Y%m%d%H00")
 
-    if not all_records:
-        print(f"  -> Ingen rækker for {area}")
+    params = {
+        "documentType": "A75",
+        "processType":  "A16",
+        "in_Domain":    eic,
+        "periodStart":  period_start,
+        "periodEnd":    period_end,
+        "securityToken": token,
+    }
+    r = requests.get(ENTSOE_URL, params=params, timeout=60)
+    print(f"  Status: {r.status_code}")
+    if r.status_code != 200:
+        print(f"  Fejl-tekst: {r.text[:300]}")
         return {}
 
-    # Tag KUN den seneste række
-    latest = all_records[-1]
-    
-    # DEBUG
-    solar_sum = sum(rec.get("SolarPower", 0) or 0 for rec in all_records)
-    print(f"  {area} solar sum over alle rækker: {solar_sum:.0f} MW-sum, seneste: {all_records[-1].get('SolarPower')}")
-    print(f"  {area} første række PriceArea felt: '{all_records[0].get('PriceArea')}'")
-    
-    print(f"  Seneste måling for {area}: {latest['Minutes5DK']} → Solar={latest.get('SolarPower')}, ...")
-    print(f"  Seneste måling for {area}: {latest['Minutes5DK']} → Solar={latest.get('SolarPower')}, Offshore={latest.get('OffshoreWindPower')}, Onshore={latest.get('OnshoreWindPower')}")
+    try:
+        root = ET.fromstring(r.text)
+    except ET.ParseError:
+        print("  Kunne ikke parse XML")
+        return {}
 
-    return {
-        "Solar":         round(latest.get("SolarPower", 0) or 0, 2),
-        "Wind Offshore": round(latest.get("OffshoreWindPower", 0) or 0, 2),
-        "Wind Onshore":  round(latest.get("OnshoreWindPower", 0) or 0, 2),
-    }
+    ns = {"ns": "urn:iec62325.351:tc57wg16:451-6:generationloaddocument:3:0"}
+    latest_values = {}
+
+    for ts in root.findall(".//ns:TimeSeries", ns):
+        psr_el = ts.find(".//ns:psrType", ns)
+        if psr_el is None:
+            continue
+        psr_code = psr_el.text
+        psr = PSR_NAMES.get(psr_code, psr_code)
+
+        for period in ts.findall("ns:Period", ns):
+            start_el = period.find("ns:timeInterval/ns:start", ns)
+            res_el   = period.find("ns:resolution", ns)
+            if start_el is None or res_el is None:
+                continue
+
+            start_dt = datetime.strptime(start_el.text, "%Y-%m-%dT%H:%MZ")
+            resolution = res_el.text
+            step_min = 15 if resolution == "PT15M" else 60
+
+            for point in period.findall("ns:Point", ns):
+                pos_el = point.find("ns:position", ns)
+                qty_el = point.find("ns:quantity", ns)
+                if pos_el is None or qty_el is None:
+                    continue
+                try:
+                    pos = int(pos_el.text)
+                    qty = float(qty_el.text)
+                    point_time = start_dt + timedelta(minutes=(pos - 1) * step_min)
+                    if psr not in latest_values or point_time > latest_values[psr]["time"]:
+                        latest_values[psr] = {"time": point_time, "value": qty}
+                except ValueError:
+                    continue
+
+    # DEBUG
+    for psr, v in latest_values.items():
+        print(f"    {psr}: {v['value']} MW (tid: {v['time']})")
+
+    return {psr: v["value"] for psr, v in latest_values.items()}
 
 
 def collect_generation_mix():
-    print("Henter generation mix fra SysPower...")
-
-    today = datetime.utcnow()
-    date_str = today.strftime("%Y-%m-%d")
-    today_sp = today.strftime("%d.%m.%Y")
-
-    SYSPOWER_TOKEN = os.environ.get("SYSPOWER_TOKEN")
-    if not SYSPOWER_TOKEN:
-        print("  SYSPOWER_TOKEN er ikke sat (secret mangler eller er tom) - afbryder.")
-        return
-
-    SERIES = [
-        "PRODK1SOL_ENTSOE", "PRODK2SOL_ENTSOE",
-        "PRODK1WINDOFF_ENTSOE", "PRODK1WINDON_ENTSOE",
-        "PRODK2WINDOFF_ENTSOE", "PRODK2WINDON_ENTSOE",
-        "PRODK1RNO_ENTSOE", "PRODK1BIO_ENTSOE",
-        "PRODK1GAS_ENTSOE", "PRODK1HCL_ENTSOE",
-        "PRODK1OIL_ENTSOE", "PRODK1WASTE_ENTSOE",
-        "PRODK2BIO_ENTSOE", "PRODK2GAS_ENTSOE",
-        "PRODK2OIL_ENTSOE", "PRODK2WASTE_ENTSOE",
-        "PRODK2HCL_ENTSOE",
-    ]
-
-    try:
-        r = requests.get(
-            "https://syspower5.skm.no/api/webquery/execute",
-            params={
-                "fileformat": "json",
-                "series": ",".join(SERIES),
-                "start": today_sp,
-                "end": today_sp,
-                "interval": "hour",
-                "token": SYSPOWER_TOKEN,
-                "emptydata": "yes",   # ← ændret fra "no": vis tomme/0-værdier i stedet for at udelade kolonner
-                "headers": "yes",     # ← tilføjet: bed API'et om at sende rigtige kolonnenavne
-            },
-            timeout=30
-        )
-        r.raise_for_status()
-        data = r.json()
-    except Exception as e:
-        print(f"  Fejl ved hentning fra SysPower: {e}")
-        return
-
-    headers = data.get("headers", [])
-    records = data.get("data", [])
-    print(f"  DEBUG headers: {headers}")
-    print(f"  DEBUG første datarække: {records[0] if records else 'ingen'}")
-
-    if not records:
-        print("  Ingen data fra SysPower for i dag.")
-        return
-
-    sums = defaultdict(float)
-    counts = defaultdict(int)
-
-    if headers and len(headers) > 1:
-        print("  Bruger headers fra API-svar til mapping.")
-        for row in records:
-            for i in range(1, len(headers)):
-                if i < len(row) and row[i] is not None:
-                    sums[headers[i]] += float(row[i])
-                    counts[headers[i]] += 1
-    else:
-        print("  Ingen headers i svar - falder tilbage til positionsmapping.")
-        for row in records:
-            for idx, series_key in enumerate(SERIES, start=1):
-                if idx < len(row) and row[idx] is not None:
-                    sums[series_key] += float(row[idx])
-                    counts[series_key] += 1
-
-    SOLAR_SERIES = {"PRODK1SOL_ENTSOE", "PRODK2SOL_ENTSOE"}
-
-    values = {}
-    for k in sums:
-        if counts[k] == 0:
-            continue
-        avg = sums[k] / counts[k]
-        if k in SOLAR_SERIES:
-            values[k] = round(avg, 2)        # ← ingen omregning for sol
-        else:
-            values[k] = round(avg * 1000, 2)  # ← GW til MW for resten
-
-    MAPPING = {
-        "DK1": {
-            "Solar":         "PRODK1SOL_ENTSOE",
-            "Wind Offshore": "PRODK1WINDOFF_ENTSOE",
-            "Wind Onshore":  "PRODK1WINDON_ENTSOE",
-            "Renewable other": "PRODK1RNO_ENTSOE",
-            "Biomass":       "PRODK1BIO_ENTSOE",
-            "Fossil Gas":    "PRODK1GAS_ENTSOE",
-            "Fossil Hard coal": "PRODK1HCL_ENTSOE",
-            "Fossil Oil":    "PRODK1OIL_ENTSOE",
-            "Waste":         "PRODK1WASTE_ENTSOE",
-        },
-        "DK2": {
-            "Solar":         "PRODK2SOL_ENTSOE",
-            "Wind Offshore": "PRODK2WINDOFF_ENTSOE",
-            "Wind Onshore":  "PRODK2WINDON_ENTSOE",
-            "Biomass":       "PRODK2BIO_ENTSOE",
-            "Fossil Gas":    "PRODK2GAS_ENTSOE",
-            "Fossil Oil":    "PRODK2OIL_ENTSOE",
-            "Waste":         "PRODK2WASTE_ENTSOE",
-            "Fossil Hard coal": "PRODK2HCL_ENTSOE",
-        },
-    }
-
+    print("Henter generation mix fra ENTSO-E (realtid)...")
+    date_str = datetime.utcnow().strftime("%Y-%m-%d")
     rows = []
-    for area, sources in MAPPING.items():
-        for source, series_key in sources.items():
-            avg_mw = values.get(series_key, 0.0)
+
+    eics = {"DK1": "10YDK-1--------W", "DK2": "10YDK-2--------M"}
+
+    for area, eic in eics.items():
+        print(f"  {area}...")
+        gen_mix = fetch_generation_mix_realtime(eic, ENTSOE_TOKEN)
+        for source, mw in gen_mix.items():
             rows.append({
                 "area":      area,
                 "date":      date_str,
                 "source":    source,
-                "avg_mw":    avg_mw,
+                "avg_mw":    round(mw, 2),
                 "is_import": False,
             })
 
     if rows:
-        print("\n--- GENERATION MIX DATA DER SENDES TIL SUPABASE ---")
+        print("\n--- KLAR TIL AT GEMME ---")
         for row in rows:
-            print(f"Area: {row['area']} | Source: {row['source']:<22} | MW: {row['avg_mw']:<8}")
-        print("---------------------------------------------------\n")
-        supabase.table("generation_mix").upsert(
-            rows, on_conflict="area,date,source"
-        ).execute()
-        print(f"Generation mix gemt ({len(rows)} rækker).")
+            print(f"{row['area']} | {row['source']:<25} | {row['avg_mw']} MW")
+        print("-------------------------\n")
+        # supabase.table("generation_mix").upsert(rows, on_conflict="area,date,source").execute()
+        print("(Gemning er udkommenteret for nu - tjek værdierne først)")
     else:
-        print("  Ingen rækker at gemme.")
+        print("  Ingen rækker.")
+
 
 if __name__ == "__main__":
     print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
