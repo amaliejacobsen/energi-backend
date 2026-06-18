@@ -126,241 +126,58 @@ def collect_realtid_dk_hourly():
             print(f"  {area} realtid gemt ({len(rows)} rækker)")
 
 
-def fetch_physical_flows(in_eic, out_eic, start_str, end_str, token):
-    params = {
-        "documentType": "A11",
-        "in_Domain":    in_eic,
-        "out_Domain":   out_eic,
-        "periodStart":  start_str,
-        "periodEnd":    end_str,
-        "securityToken": token,
-    }
-    for attempt in range(3):
-        try:
-            r = requests.get(ENTSOE_URL, params=params, timeout=90)  # ← op fra 60
-            if r.status_code == 200:
-                break
-            elif r.status_code in (503, 429):
-                time.sleep(10 * (attempt + 1))
-            else:
-                return 0
-        except requests.exceptions.ReadTimeout:
-            print(f"  Timeout ved physical flows (forsøg {attempt+1}/3), venter 30s...")
-            time.sleep(30)
-        except Exception as e:
-            print(f"  Fejl ved physical flows: {e}")
-            return 0
-    else:
-        print(f"  Alle forsøg fejlede for {in_eic} → {out_eic}, returnerer 0")
-        return 0
-    # ... resten uændret
-    try:
-        root = ET.fromstring(r.text)
-    except ET.ParseError:
-        return 0
-
-    ns = {"ns": "urn:iec62325.351:tc57wg16:451-3:publicationdocument:7:0"}
-    total = 0
-    count = 0
-    for ts in root.findall(".//ns:TimeSeries", ns):
-        for period in ts.findall("ns:Period", ns):
-            res_el = period.find("ns:resolution", ns)
-            resolution = res_el.text if res_el is not None else "PT60M"
-            for point in period.findall("ns:Point", ns):
-                qty_el = point.find("ns:quantity", ns)
-                if qty_el is None:
-                    continue
-                try:
-                    qty = float(qty_el.text)
-                    if resolution == "PT15M":
-                        qty /= 4
-                    total += qty
-                    count += 1
-                except ValueError:
-                    continue
-    return total / count if count > 0 else 0
-
-
-def fetch_generation_mix(eic, start_str, end_str, token):
-    params = {
-        "documentType": "A75",
-        "processType":  "A16",
-        "in_Domain":    eic,
-        "periodStart":  start_str,
-        "periodEnd":    end_str,
-        "securityToken": token,
-    }
-    for attempt in range(3):
-        r = requests.get(ENTSOE_URL, params=params, timeout=60)
-        if r.status_code == 200:
-            break
-        elif r.status_code in (503, 429):
-            time.sleep(10 * (attempt + 1))
-        else:
-            return {}
-    else:
-        return {}
-
-    try:
-        root = ET.fromstring(r.text)
-    except ET.ParseError:
-        return {}
-
-    ns = {"ns": "urn:iec62325.351:tc57wg16:451-6:generationloaddocument:3:0"}
-    result = defaultdict(float)
-    counts = defaultdict(int)
-
-    for ts in root.findall(".//ns:TimeSeries", ns):
-        psr_el = ts.find(".//ns:psrType", ns)
-        if psr_el is None:
-            continue
-        psr = PSR_NAMES.get(psr_el.text, psr_el.text)
-        for period in ts.findall("ns:Period", ns):
-            res_el = period.find("ns:resolution", ns)
-            resolution = res_el.text if res_el is not None else "PT60M"
-            for point in period.findall("ns:Point", ns):
-                qty_el = point.find("ns:quantity", ns)
-                if qty_el is None:
-                    continue
-                try:
-                    qty = float(qty_el.text)
-                    if resolution == "PT15M":
-                        qty /= 4
-                    result[psr] += qty
-                    counts[psr] += 1
-                except ValueError:
-                    continue
-
-    return {psr: result[psr] / counts[psr] for psr in result if counts[psr] > 0}
-
-def fetch_all_records(dataset, area, start="2020-01-01", end=None):
-    all_records = []
-    limit = 10000
-    offset = 0
-    sort_column = "TimeDK" if dataset == "DayAheadPrices" else "HourDK"
-    rate_limit_attempts = 0
-    while True:
-        try:
-            # RETTELSE 1: Vi bygger params sikkert så den ikke crasher hvis global 'end' mangler
-            params = {
-                "start": start,
-                "filter": f'{{"PriceArea":"{area}"}}',
-                "limit": limit,
-                "offset": offset,
-                "sort": f"{sort_column} asc",
-            }
-            if end is not None:
-                params["end"] = end
-
-            r = requests.get(f"https://api.energidataservice.dk/dataset/{dataset}", params=params, timeout=30)
-            
-            if r.status_code == 429:
-                rate_limit_attempts += 1   
-                ventetid = 60 * rate_limit_attempts  
-                # RETTELSE 2: Dynamisk ventetid vises nu korrekt i printet
-                print(f"  Rate limit ramt for {dataset} ({area}) ved offset {offset}, venter {ventetid}s...")
-                time.sleep(ventetid)
-                continue
-            rate_limit_attempts = 0 
-            
-            # RETTELSE 3: Fjernet den ekstra dublerede r.raise_for_status()
-            r.raise_for_status()
-                
-            if not r.text.strip():
-                break
-            data = r.json()
-            records = data.get("records", [])
-            if not records:
-                break
-            all_records.extend(records)
-            if len(records) < limit:
-                break
-            offset += limit
-            time.sleep(2)  
-        except Exception as e:
-            print(f"Fejl ved hentning af {dataset} ({area}): {e}")
-            break
-    return all_records
-
-
-def fetch_generation_mix_realtime(eic, token):
-    """Henter seneste tilgængelige A75 generation data (typisk 1-3 timer forsinket)."""
-    now = datetime.utcnow()
-    period_start = (now - timedelta(hours=6)).strftime("%Y%m%d%H00")
-    period_end   = now.strftime("%Y%m%d%H00")
-
-    params = {
-        "documentType": "A75",
-        "processType":  "A16",
-        "in_Domain":    eic,
-        "periodStart":  period_start,
-        "periodEnd":    period_end,
-        "securityToken": token,
-    }
-    r = requests.get(ENTSOE_URL, params=params, timeout=60)
-    print(f"  Status: {r.status_code}")
-    if r.status_code != 200:
-        print(f"  Fejl-tekst: {r.text[:300]}")
-        return {}
-
-    try:
-        root = ET.fromstring(r.text)
-    except ET.ParseError:
-        print("  Kunne ikke parse XML")
-        return {}
-
-    ns = {"ns": "urn:iec62325.351:tc57wg16:451-6:generationloaddocument:3:0"}
-    latest_values = {}
-
-    for ts in root.findall(".//ns:TimeSeries", ns):
-        psr_el = ts.find(".//ns:psrType", ns)
-        if psr_el is None:
-            continue
-        psr_code = psr_el.text
-        psr = PSR_NAMES.get(psr_code, psr_code)
-
-        for period in ts.findall("ns:Period", ns):
-            start_el = period.find("ns:timeInterval/ns:start", ns)
-            res_el   = period.find("ns:resolution", ns)
-            if start_el is None or res_el is None:
-                continue
-
-            start_dt = datetime.strptime(start_el.text, "%Y-%m-%dT%H:%MZ")
-            resolution = res_el.text
-            step_min = 15 if resolution == "PT15M" else 60
-
-            for point in period.findall("ns:Point", ns):
-                pos_el = point.find("ns:position", ns)
-                qty_el = point.find("ns:quantity", ns)
-                if pos_el is None or qty_el is None:
-                    continue
-                try:
-                    pos = int(pos_el.text)
-                    qty = float(qty_el.text)
-                    point_time = start_dt + timedelta(minutes=(pos - 1) * step_min)
-                    if psr not in latest_values or point_time > latest_values[psr]["time"]:
-                        latest_values[psr] = {"time": point_time, "value": qty}
-                except ValueError:
-                    continue
-
-    # DEBUG
-    for psr, v in latest_values.items():
-        print(f"    {psr}: {v['value']} MW (tid: {v['time']})")
-
-    return {psr: v["value"] for psr, v in latest_values.items()}
-
 
 def collect_generation_mix():
-    print("Henter generation mix fra ENTSO-E (realtid)...")
+    print("Henter generation mix (GenerationProdTypeExchange)...")
     date_str = datetime.utcnow().strftime("%Y-%m-%d")
-    rows = []
 
-    eics = {"DK1": "10YDK-1--------W", "DK2": "10YDK-2--------M"}
+    for area in ["DK1", "DK2"]:
+        r = requests.get(
+            "https://api.energidataservice.dk/dataset/GenerationProdTypeExchange",
+            params={
+                "filter": f'{{"PriceArea":"{area}"}}',
+                "start": (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%dT%H:%M"),
+                "limit": 100,
+                "sort": "TimeDK desc",
+            },
+            timeout=30
+        )
+        if r.status_code != 200:
+            print(f"  Fejl for {area}: {r.status_code}")
+            continue
 
-    for area, eic in eics.items():
-        print(f"  {area}...")
-        gen_mix = fetch_generation_mix_realtime(eic, ENTSOE_TOKEN)
-        for source, mw in gen_mix.items():
+        records = r.json().get("records", [])
+        if not records:
+            print(f"  Ingen data for {area}")
+            continue
+
+        rec = records[0]  # seneste tidspunkt
+        print(f"  {area} tidspunkt: {rec.get('TimeDK')}")
+
+        sources = {
+            "Offshore Wind":  rec.get("OffshoreWindPower", 0) or 0,
+            "Onshore Wind":   rec.get("OnshoreWindPower", 0) or 0,
+            "Solar":          rec.get("SolarPower", 0) or 0,
+            "Hydro":          rec.get("HydroPower", 0) or 0,
+            "Biomass":        rec.get("Biomass", 0) or 0,
+            "Biogas":         rec.get("Biogas", 0) or 0,
+            "Waste":          rec.get("Waste", 0) or 0,
+            "Fossil Gas":     rec.get("FossilGas", 0) or 0,
+            "Fossil Oil":     rec.get("FossilOil", 0) or 0,
+            "Fossil Hard coal": rec.get("FossilHardCoal", 0) or 0,
+        }
+
+        exchanges = {
+            "Fra Tyskland":      rec.get("ExchangeGermany", 0) or 0,
+            "Fra Sverige":       rec.get("ExchangeSweden", 0) or 0,
+            "Fra Norge":         rec.get("ExchangeNorway", 0) or 0,
+            "Fra Holland":       rec.get("ExchangeNetherlands", 0) or 0,
+            "Fra Storbritannien": rec.get("ExchangeGreatBritain", 0) or 0,
+            "Fra DK1/DK2":       rec.get("ExchangeGreatBelt", 0) or 0,
+        }
+
+        rows = []
+        for source, mw in sources.items():
             rows.append({
                 "area":      area,
                 "date":      date_str,
@@ -368,17 +185,23 @@ def collect_generation_mix():
                 "avg_mw":    round(mw, 2),
                 "is_import": False,
             })
+        for source, mw in exchanges.items():
+            if mw > 0:  # kun positiv = faktisk import
+                rows.append({
+                    "area":      area,
+                    "date":      date_str,
+                    "source":    source,
+                    "avg_mw":    round(mw, 2),
+                    "is_import": True,
+                })
 
-    if rows:
-        print("\n--- KLAR TIL AT GEMME ---")
+        print(f"\n--- {area} KLAR TIL AT GEMME ---")
         for row in rows:
-            print(f"{row['area']} | {row['source']:<25} | {row['avg_mw']} MW")
+            print(f"{row['source']:<22} | {row['avg_mw']} MW | import={row['is_import']}")
         print("-------------------------\n")
+
         # supabase.table("generation_mix").upsert(rows, on_conflict="area,date,source").execute()
         print("(Gemning er udkommenteret for nu - tjek værdierne først)")
-    else:
-        print("  Ingen rækker.")
-
 
 if __name__ == "__main__":
     print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
