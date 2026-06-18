@@ -200,7 +200,7 @@ def collect_generation_mix():
             print(f"{row['source']:<22} | {row['avg_mw']} MW | import={row['is_import']}")
         print("-------------------------\n")
 
-            supabase.table("generation_mix").upsert(rows, on_conflict="area,date,source").execute()
+        supabase.table("generation_mix").upsert(rows, on_conflict="area,date,source").execute()
         print("(Gemning er udkommenteret for nu - tjek værdierne først)")
 
 if __name__ == "__main__":
