@@ -45,6 +45,77 @@ DK_NEIGHBORS = {
     }
 }
 
+def collect_dk_hourly_data():
+    print("Henter DK timesdata...")
+    
+    for area in ["DK1", "DK2"]: 
+        price_dict = {}
+        
+        # Kun hent de seneste 7 dage + i morgen (day-ahead)
+        recent_start = (current_date - timedelta(days=7)).strftime("%Y-%m-%d")
+        
+        for rec in fetch_all_records("Elspotprices", area, start=recent_start):
+            dt_str = rec["HourDK"].replace('Z', '') 
+            price_dict[dt_str] = {
+                "area": area,
+                "datetime": dt_str,
+                "price_dkk": rec["SpotPriceDKK"]
+            }
+            
+        for rec in fetch_all_records("DayAheadPrices", area, start=recent_start):
+            dt_str = rec["TimeDK"].replace('Z', '')
+            if dt_str not in price_dict:
+                price_dict[dt_str] = {
+                    "area": area,
+                    "datetime": dt_str,
+                    "price_dkk": rec["DayAheadPriceDKK"]
+                }
+        
+        price_rows = list(price_dict.values())
+        if price_rows:
+            for i in range(0, len(price_rows), 1000):
+                supabase.table("dk_prices_hourly").upsert(
+                    price_rows[i:i+1000], 
+                    on_conflict="area,datetime"
+                ).execute()
+            print(f"  {area} priser gemt ({len(price_rows)} rækker)")
+
+        # Produktion — behold start=2020 kun første gang, herefter kun recent
+        # ... resten af funktionen uændret
+
+        # Produktion — historisk fra ProductionConsumptionSettlement
+        solar_dict = {}
+        offshore_dict = {}
+        onshore_dict = {}
+        consumption_dict = {}
+
+        for rec in fetch_all_records("ProductionConsumptionSettlement", area):
+            dt = datetime.fromisoformat(rec["HourDK"].replace('Z', '+00:00'))
+            dt_iso = dt.isoformat()
+            solar    = (rec.get("SolarPowerLt10kW_MWh", 0) or 0) + \
+                       (rec.get("SolarPowerGe10Lt40kW_MWh", 0) or 0) + \
+                       (rec.get("SolarPowerGe40kW_MWh", 0) or 0)
+            offshore = (rec.get("OffshoreWindLt100MW_MWh", 0) or 0) + \
+                       (rec.get("OffshoreWindGe100MW_MWh", 0) or 0)
+            onshore  = (rec.get("OnshoreWindLt50kW_MWh", 0) or 0) + \
+                       (rec.get("OnshoreWindGe50kW_MWh", 0) or 0)
+            consumption = rec.get("GrossConsumption_MWh", 0) or 0
+            solar_dict[dt_iso]       = {"area": area, "source": "solar",       "datetime": dt_iso, "value_mwh": solar}
+            offshore_dict[dt_iso]    = {"area": area, "source": "offshore",    "datetime": dt_iso, "value_mwh": offshore}
+            onshore_dict[dt_iso]     = {"area": area, "source": "onshore",     "datetime": dt_iso, "value_mwh": onshore}
+            consumption_dict[dt_iso] = {"area": area, "source": "consumption", "datetime": dt_iso, "value_mwh": consumption}
+
+
+        for source, d in [("solar", solar_dict), ("offshore", offshore_dict), ("onshore", onshore_dict), ("consumption", consumption_dict)]:
+            rows = list(d.values())
+            if rows:
+                for i in range(0, len(rows), 1000):
+                    supabase.table("dk_production_hourly").upsert(
+                        rows[i:i+1000], on_conflict="area,source,datetime"
+                    ).execute()
+                print(f"  {area} {source} gemt ({len(rows)} rækker)")
+
+
 def collect_realtid_dk_hourly():
     print("Henter realtid data (GenerationProdTypeExchange)...")
 
@@ -238,4 +309,5 @@ if __name__ == "__main__":
     print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
     collect_realtid_dk_hourly()
     collect_generation_mix()
+    collect_dk_hourly_data()
     print(f"\nFærdig: {datetime.now()}\n{'='*40}")
