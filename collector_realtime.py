@@ -132,18 +132,35 @@ def collect_generation_mix():
     date_str = datetime.utcnow().strftime("%Y-%m-%d")
 
     for area in ["DK1", "DK2"]:
-        r = requests.get(
-            "https://api.energidataservice.dk/dataset/GenerationProdTypeExchange",
-            params={
-                "filter": f'{{"PriceArea":"{area}"}}',
-                "start": (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%dT%H:%M"),
-                "limit": 100,
-                "sort": "TimeDK desc",
-            },
-            timeout=30
-        )
-        if r.status_code != 200:
-            print(f"  Fejl for {area}: {r.status_code}")
+        if area == "DK2":
+            print("  Pause før DK2...")
+            time.sleep(30)
+
+        r = None
+        for attempt in range(5):
+            try:
+                r = requests.get(
+                    "https://api.energidataservice.dk/dataset/GenerationProdTypeExchange",
+                    params={
+                        "filter": f'{{"PriceArea":"{area}"}}',
+                        "start": (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%dT%H:%M"),
+                        "limit": 100,
+                        "sort": "TimeDK desc",
+                    },
+                    timeout=30
+                )
+                if r.status_code == 429:
+                    wait = 30 * (attempt + 1)
+                    print(f"  Rate limit for {area}, venter {wait}s...")
+                    time.sleep(wait)
+                    continue
+                r.raise_for_status()
+                break
+            except Exception as e:
+                print(f"  Fejl for {area}: {e}, venter 15s...")
+                time.sleep(15)
+        else:
+            print(f"  Alle forsøg fejlede for {area}, springer over.")
             continue
 
         records = r.json().get("records", [])
@@ -186,14 +203,15 @@ def collect_generation_mix():
                 "is_import": False,
             })
         for source, mw in exchanges.items():
-            if mw > 0:  # kun positiv = faktisk import
-                rows.append({
-                    "area":      area,
-                    "date":      date_str,
-                    "source":    source,
-                    "avg_mw":    round(mw, 2),
-                    "is_import": True,
-                })
+            if mw == 0:
+                continue
+            rows.append({
+                "area":      area,
+                "date":      date_str,
+                "source":    source,
+                "avg_mw":    round(mw, 2),
+                "is_import": mw > 0,
+            })
 
         print(f"\n--- {area} KLAR TIL AT GEMME ---")
         for row in rows:
