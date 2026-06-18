@@ -46,35 +46,31 @@ DK_NEIGHBORS = {
 }
 
 def collect_realtid_dk_hourly():
-    print("Henter realtid data...")
+    print("Henter realtid data (GenerationProdTypeExchange)...")
 
     from_dt = (datetime.utcnow() - timedelta(hours=48)).strftime("%Y-%m-%dT%H:%M")
     rows_per_area = {"DK1": {}, "DK2": {}}
 
     for area in ["DK1", "DK2"]:
-        if area == "DK2":
-            print("  Pause før DK2...")
-            time.sleep(60)
         offset = 0
         while True:
             r = None
-            for attempt in range(10):
+            for attempt in range(5):
                 try:
                     r = requests.get(
-                        "https://api.energidataservice.dk/dataset/ElectricityProdex5MinRealtime",
+                        "https://api.energidataservice.dk/dataset/GenerationProdTypeExchange",
                         params={
                             "filter": f'{{"PriceArea":"{area}"}}',
                             "start": from_dt,
                             "limit": 1000,
                             "offset": offset,
-                            "sort": "Minutes5UTC asc",
+                            "sort": "TimeDK asc",
                         },
                         timeout=30
                     )
                     if r.status_code == 429:
-                        wait = 60 * (attempt + 1)
-                        print(f"  Rate limit, venter {wait}s...")
-                        time.sleep(wait)
+                        print(f"  Rate limit, venter 30s...")
+                        time.sleep(30)
                         continue
                     r.raise_for_status()
                     break
@@ -89,32 +85,20 @@ def collect_realtid_dk_hourly():
             if not records:
                 break
 
-            for rec in records:
-                dt_str = rec["Minutes5DK"].replace("Z", "")
-                dt_dk = datetime.fromisoformat(dt_str)
-                dt_utc = dt_dk - timedelta(hours=2)
-                dt_str_utc = dt_utc.strftime("%Y-%m-%dT%H:%M:%S")
+            # DEBUG - vis felter første gang
+            if offset == 0:
+                print(f"  FELTER {area}:", list(records[0].keys()))
 
-                exchange_abroad = (
-                    (rec.get("ExchangeGermany", 0) or 0) +
-                    (rec.get("ExchangeNetherlands", 0) or 0) +
-                    (rec.get("ExchangeGreatBritain", 0) or 0) +
-                    (rec.get("ExchangeNorway", 0) or 0) +
-                    (rec.get("ExchangeSweden", 0) or 0) +
-                    (rec.get("BornholmSE4", 0) or 0)
-                )
-                production = (
-                    (rec.get("ProductionLt100MW", 0) or 0) +
-                    (rec.get("ProductionGe100MW", 0) or 0) +
-                    (rec.get("OffshoreWindPower", 0) or 0) +
-                    (rec.get("OnshoreWindPower", 0) or 0) +
-                    (rec.get("SolarPower", 0) or 0)
-                )
-                rows_per_area[area][dt_str_utc] = {
+            for rec in records:
+                dt_str = rec.get("TimeDK", "").replace("Z", "")
+                if not dt_str:
+                    continue
+                dt_iso = datetime.fromisoformat(dt_str).isoformat()
+                rows_per_area[area][dt_iso] = {
                     "solar":       rec.get("SolarPower", 0) or 0,
                     "offshore":    rec.get("OffshoreWindPower", 0) or 0,
                     "onshore":     rec.get("OnshoreWindPower", 0) or 0,
-                    "consumption": (production - exchange_abroad) * (5/60),
+                    "consumption": rec.get("TotalLoad", 0) or 0,
                 }
 
             if len(records) < 1000:
