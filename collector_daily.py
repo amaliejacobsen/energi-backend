@@ -1282,6 +1282,8 @@ def collect_all():
     print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
     collect_dk_data()
     collect_dk_hourly_data()
+    collect_realtid_dk_hourly()
+    collect_consumption_data()
     collect_temperature_forecast_data()
     collect_hydro_forecast_data()
     print(f"\nFærdig: {datetime.now()}\n{'='*40}")
