@@ -989,8 +989,12 @@ def collect_dk_hourly_data():
         consumption_dict = {}
 
         for rec in fetch_all_records("ProductionConsumptionSettlement", area):
-            dt = datetime.fromisoformat(rec["HourDK"].replace('Z', '+00:00'))
-            dt_iso = dt.isoformat()
+            # 1. Læs den danske tid (f.eks. "2026-06-23T00:00:00")
+            dt_dk = datetime.fromisoformat(rec["HourDK"].replace('Z', ''))
+            
+            # 2. Træk 2 timer fra (præcis som du gjorde med spotprisen) for at få UTC
+            dt_utc = dt_dk - timedelta(hours=2)
+            dt_iso = dt_utc.strftime("%Y-%m-%dT%H:%M:%S") # Matcher dit format fra priserne
             solar    = (rec.get("SolarPowerLt10kW_MWh", 0) or 0) + \
                        (rec.get("SolarPowerGe10Lt40kW_MWh", 0) or 0) + \
                        (rec.get("SolarPowerGe40kW_MWh", 0) or 0)
