@@ -951,8 +951,7 @@ def collect_dk_hourly_data():
         
         for rec in fetch_all_records("Elspotprices", area, start=recent_start):
             dt_dk = datetime.fromisoformat(rec["HourDK"].replace('Z', ''))
-            dt_utc = dt_dk - timedelta(hours=2)
-            dt_str = dt_utc.strftime("%Y-%m-%dT%H:%M:%S")
+            dt_str = dt_dk.strftime("%Y-%m-%dT%H:%M:%S")
             price_dict[dt_str] = {
                 "area": area,
                 "datetime": dt_str,
@@ -961,8 +960,7 @@ def collect_dk_hourly_data():
         
         for rec in fetch_all_records("DayAheadPrices", area, start=recent_start):
             dt_dk = datetime.fromisoformat(rec["TimeDK"].replace('Z', ''))
-            dt_utc = dt_dk - timedelta(hours=2)
-            dt_str = dt_utc.strftime("%Y-%m-%dT%H:%M:%S")
+            dt_str = dt_dk.strftime("%Y-%m-%dT%H:%M:%S")
             if dt_str not in price_dict:
                 price_dict[dt_str] = {
                     "area": area,
@@ -989,12 +987,7 @@ def collect_dk_hourly_data():
         consumption_dict = {}
 
         for rec in fetch_all_records("ProductionConsumptionSettlement", area):
-            # 1. Læs den danske tid (f.eks. "2026-06-23T00:00:00")
-            dt_dk = datetime.fromisoformat(rec["HourDK"].replace('Z', ''))
-            
-            # 2. Træk 2 timer fra (præcis som du gjorde med spotprisen) for at få UTC
-            dt_utc = dt_dk - timedelta(hours=2)
-            dt_iso = dt_utc.strftime("%Y-%m-%dT%H:%M:%S") # Matcher dit format fra priserne
+            dt_str = rec["HourDK"].replace('Z', '')  # behold dansk tid
             solar    = (rec.get("SolarPowerLt10kW_MWh", 0) or 0) + \
                        (rec.get("SolarPowerGe10Lt40kW_MWh", 0) or 0) + \
                        (rec.get("SolarPowerGe40kW_MWh", 0) or 0)
@@ -1003,10 +996,10 @@ def collect_dk_hourly_data():
             onshore  = (rec.get("OnshoreWindLt50kW_MWh", 0) or 0) + \
                        (rec.get("OnshoreWindGe50kW_MWh", 0) or 0)
             consumption = rec.get("GrossConsumption_MWh", 0) or 0
-            solar_dict[dt_iso]       = {"area": area, "source": "solar",       "datetime": dt_iso, "value_mwh": solar}
-            offshore_dict[dt_iso]    = {"area": area, "source": "offshore",    "datetime": dt_iso, "value_mwh": offshore}
-            onshore_dict[dt_iso]     = {"area": area, "source": "onshore",     "datetime": dt_iso, "value_mwh": onshore}
-            consumption_dict[dt_iso] = {"area": area, "source": "consumption", "datetime": dt_iso, "value_mwh": consumption}
+            solar_dict[dt_str]       = {"area": area, "source": "solar",       "datetime": dt_str, "value_mwh": solar}
+            offshore_dict[dt_str]    = {"area": area, "source": "offshore",    "datetime": dt_str, "value_mwh": offshore}
+            onshore_dict[dt_str]     = {"area": area, "source": "onshore",     "datetime": dt_str, "value_mwh": onshore}
+            consumption_dict[dt_str] = {"area": area, "source": "consumption", "datetime": dt_str, "value_mwh": consumption}
 
 
         for source, d in [("solar", solar_dict), ("offshore", offshore_dict), ("onshore", onshore_dict), ("consumption", consumption_dict)]:
