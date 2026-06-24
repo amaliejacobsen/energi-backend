@@ -146,7 +146,7 @@ def collect_realtid_dk_hourly():
                     "solar":       rec.get("SolarPower", 0) or 0,
                     "offshore":    rec.get("OffshoreWindPower", 0) or 0,
                     "onshore":     rec.get("OnshoreWindPower", 0) or 0,
-                    "consumption": rec.get("Grosscon", 0) or 0,
+                    "consumption": rec.get("GrossCon", 0) or 0,
                 }
             
             if len(records) < 1000:
