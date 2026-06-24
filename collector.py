@@ -1073,6 +1073,12 @@ def collect_all():
     print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
     collect_dk_hourly_data()
     collect_consumption_data()
+    collect_capacity_data()
+    collect_gas_data()
+    collect_hydro_data()
+    collect_nuclear_data()
+    collect_dk_data()
+    collect_dk_daily_production()
     print(f"\nFærdig: {datetime.now()}\n{'='*40}")
 
 if __name__ == "__main__":
