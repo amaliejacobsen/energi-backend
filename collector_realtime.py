@@ -133,7 +133,7 @@ def collect_realtid_dk_hourly():
             
             if offset == 0:
                 rec = records[0]
-                print(f"  DEBUG LAST5 area={area} TimeDK={dt_str}: GrossCon={rec.get('GrossCon')}, GrossConsumption={rec.get('GrossConsumption')}, TotalLoad={rec.get('TotalLoad')}")
+                print(f"  DEBUG LAST5 area={area} TimeDK={rec.get('TimeDK')}: GrossCon={rec.get('GrossCon')}, GrossConsumption={rec.get('GrossConsumption')}, TotalLoad={rec.get('TotalLoad')}")
             
             for rec in records:
                 dt_str = rec.get("TimeDK", "").replace("Z", "")
