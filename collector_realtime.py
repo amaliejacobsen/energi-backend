@@ -201,10 +201,14 @@ def collect_realtid_dk_hourly():
             if not records:
                 break
 
-            # DEBUG - vis felter første gang
+            records = r.json().get("records", [])
+            if not records:
+                break
+            
             if offset == 0:
-                print(f"  FELTER {area}:", list(records[0].keys()))
-
+                rec = records[0]
+                print(f"  RAW værdier {area}: Solar={rec.get('SolarPower')}, Offshore={rec.get('OffshoreWindPower')}, Onshore={rec.get('OnshoreWindPower')}")
+            
             for rec in records:
                 dt_str = rec.get("TimeDK", "").replace("Z", "")
                 if not dt_str:
@@ -216,7 +220,7 @@ def collect_realtid_dk_hourly():
                     "onshore":     rec.get("OnshoreWindPower", 0) or 0,
                     "consumption": rec.get("TotalLoad", 0) or 0,
                 }
-
+            
             if len(records) < 1000:
                 break
             offset += 1000
