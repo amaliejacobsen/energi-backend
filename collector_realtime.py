@@ -133,7 +133,7 @@ def collect_realtid_dk_hourly():
             
             if offset == 0:
                 rec = records[0]
-                print(f"  RAW værdier {area}: Solar={rec.get('SolarPower')}, Offshore={rec.get('OffshoreWindPower')}, Onshore={rec.get('OnshoreWindPower')}")
+                print(f"  DEBUG kl 06:00 TimeDK={rec.get('TimeDK')} Version={rec.get('Version')}: Solar={rec.get('SolarPower')}, GrossCon={rec.get('GrossCon')}, GrossConsumption={rec.get('GrossConsumption')}, TotalLoad={rec.get('TotalLoad')}")
             
             for rec in records:
                 dt_str = rec.get("TimeDK", "").replace("Z", "")
