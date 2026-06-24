@@ -140,7 +140,7 @@ def collect_realtid_dk_hourly():
                 if not dt_str:
                     continue
                 if "T06:00" in dt_str and area == "DK1":
-                    print(f"  DEBUG kl 06:00: Solar={rec.get('SolarPower')}, Offshore={rec.get('OffshoreWindPower')}, Onshore={rec.get('OnshoreWindPower')}")
+                    print(f"  DEBUG kl 06:00 TimeDK={rec.get('TimeDK')}: Solar={rec.get('SolarPower')}, Offshore={rec.get('OffshoreWindPower')}, Onshore={rec.get('OnshoreWindPower')}")
                 dt_iso = dt_str
                 rows_per_area[area][dt_iso] = {
                     "solar":       rec.get("SolarPower", 0) or 0,
