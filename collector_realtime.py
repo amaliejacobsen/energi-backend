@@ -90,7 +90,7 @@ def fetch_all_records(dataset, area, start="2020-01-01"):
 def collect_realtid_dk_hourly():
     print("Henter realtid data (GenerationProdTypeExchange)...")
 
-    from_dt = (datetime.utcnow() - timedelta(days=14)).strftime("%Y-%m-%dT%H:%M")
+    from_dt = (datetime.utcnow() - timedelta(hours=48)).strftime("%Y-%m-%dT%H:%M")
     rows_per_area = {"DK1": {}, "DK2": {}}
 
     for area in ["DK1", "DK2"]:
@@ -133,7 +133,7 @@ def collect_realtid_dk_hourly():
             
             if offset == 0:
                 rec = records[0]
-                print(f"  DEBUG kl 06:00 TimeDK={rec.get('TimeDK')} Version={rec.get('Version')}: Solar={rec.get('SolarPower')}, GrossCon={rec.get('GrossCon')}, GrossConsumption={rec.get('GrossConsumption')}, TotalLoad={rec.get('TotalLoad')}")
+                print(f"  DEBUG LAST5 area={area} TimeDK={dt_str}: GrossCon={rec.get('GrossCon')}, GrossConsumption={rec.get('GrossConsumption')}, TotalLoad={rec.get('TotalLoad')}")
             
             for rec in records:
                 dt_str = rec.get("TimeDK", "").replace("Z", "")
