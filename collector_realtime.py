@@ -173,7 +173,43 @@ def collect_realtid_dk_hourly():
                 ).execute()
             print(f"  {area} realtid gemt ({len(rows)} rækker)")
 
-
+def collect_dk_prices_realtime():
+    print("Henter spotpriser...")
+    
+    recent_start = (datetime.utcnow() - timedelta(days=2)).strftime("%Y-%m-%d")
+    
+    for area in ["DK1", "DK2"]:
+        price_dict = {}
+        
+        for rec in fetch_all_records("Elspotprices", area, start=recent_start):
+            dt_dk = datetime.fromisoformat(rec["HourDK"].replace('Z', ''))
+            dt_utc = dt_dk - timedelta(hours=2)
+            dt_str = dt_utc.strftime("%Y-%m-%dT%H:%M:%S")
+            price_dict[dt_str] = {
+                "area": area,
+                "datetime": dt_str,
+                "price_dkk": rec["SpotPriceDKK"]
+            }
+        
+        for rec in fetch_all_records("DayAheadPrices", area, start=recent_start):
+            dt_dk = datetime.fromisoformat(rec["TimeDK"].replace('Z', ''))
+            dt_utc = dt_dk - timedelta(hours=2)
+            dt_str = dt_utc.strftime("%Y-%m-%dT%H:%M:%S")
+            if dt_str not in price_dict:
+                price_dict[dt_str] = {
+                    "area": area,
+                    "datetime": dt_str,
+                    "price_dkk": rec["DayAheadPriceDKK"]
+                }
+        
+        price_rows = list(price_dict.values())
+        if price_rows:
+            for i in range(0, len(price_rows), 1000):
+                supabase.table("dk_prices_hourly").upsert(
+                    price_rows[i:i+1000],
+                    on_conflict="area,datetime"
+                ).execute()
+            print(f"  {area} priser gemt ({len(price_rows)} rækker)")
 
 def collect_generation_mix():
     print("Henter generation mix (GenerationProdTypeExchange) - akkumuleret fra kl. 00...")
@@ -286,4 +322,5 @@ if __name__ == "__main__":
     print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
     collect_realtid_dk_hourly()
     collect_generation_mix()
+    collect_dk_prices_realtime()
     print(f"\nFærdig: {datetime.now()}\n{'='*40}")
