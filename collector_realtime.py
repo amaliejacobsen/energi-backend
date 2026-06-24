@@ -15,6 +15,8 @@ ENTSOE_URL   = "https://web-api.tp.entsoe.eu/api"
 
 current_date = datetime.today()
 
+end = (datetime.today() + timedelta(days=1)).strftime("%Y-%m-%d")
+
 PSR_NAMES = {
     "B01": "Biomass", "B02": "Fossil Brown coal/Lignite", "B03": "Fossil Coal-derived gas",
     "B04": "Fossil Gas", "B05": "Fossil Hard coal", "B06": "Fossil Oil",
@@ -130,7 +132,7 @@ def collect_dk_hourly_data():
 
         for rec in fetch_all_records("ProductionConsumptionSettlement", area):
             dt = datetime.fromisoformat(rec["HourDK"].replace('Z', '+00:00'))
-            dt_iso = dt.isoformat()
+            dt_iso = rec["HourDK"].replace('Z', '')
             solar    = (rec.get("SolarPowerLt10kW_MWh", 0) or 0) + \
                        (rec.get("SolarPowerGe10Lt40kW_MWh", 0) or 0) + \
                        (rec.get("SolarPowerGe40kW_MWh", 0) or 0)
@@ -203,7 +205,7 @@ def collect_realtid_dk_hourly():
                 dt_str = rec.get("TimeDK", "").replace("Z", "")
                 if not dt_str:
                     continue
-                dt_iso = datetime.fromisoformat(dt_str).isoformat()
+                dt_iso = dt_str
                 rows_per_area[area][dt_iso] = {
                     "solar":       rec.get("SolarPower", 0) or 0,
                     "offshore":    rec.get("OffshoreWindPower", 0) or 0,
