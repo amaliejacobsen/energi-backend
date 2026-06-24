@@ -1154,7 +1154,7 @@ def collect_temperature_forecast_data():
         ],
     }
 
-    variable = "temperature_2m_mean"
+    variable = "temperature_2m_max"
     today_dt = datetime.today()
     today_str = today_dt.strftime("%Y-%m-%d")
     date_from = (today_dt - timedelta(days=14)).strftime("%Y-%m-%d")
