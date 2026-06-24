@@ -972,7 +972,7 @@ def collect_dk_hourly_data():
         if price_rows:
             for i in range(0, len(price_rows), 1000):
                 supabase.table("dk_prices_hourly").upsert(
-                    price_rows[i:i+1000], 
+                    price_rows[i:i+1000],
                     on_conflict="area,datetime"
                 ).execute()
             print(f"  {area} priser gemt ({len(price_rows)} rækker)")
@@ -1006,9 +1006,12 @@ def collect_dk_hourly_data():
             rows = list(d.values())
             if rows:
                 for i in range(0, len(rows), 1000):
-                    supabase.table("dk_production_hourly").upsert(
-                        rows[i:i+1000], on_conflict="area,source,datetime"
-                    ).execute()
+                    try:
+                        supabase.table("dk_production_hourly").insert(
+                            rows[i:i+1000]
+                        ).execute()
+                    except Exception as e:
+                        pass
                 print(f"  {area} {source} gemt ({len(rows)} rækker)")
 
 def fetch_openmeteo_historical_daily_var(lat, lon, date_from, date_to, variable, retries=3):
