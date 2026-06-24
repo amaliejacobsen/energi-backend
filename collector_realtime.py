@@ -90,7 +90,7 @@ def fetch_all_records(dataset, area, start="2020-01-01"):
 def collect_realtid_dk_hourly():
     print("Henter realtid data (GenerationProdTypeExchange)...")
 
-    from_dt = (datetime.utcnow() - timedelta(hours=48)).strftime("%Y-%m-%dT%H:%M")
+    from_dt = (datetime.utcnow() - timedelta(days=14)).strftime("%Y-%m-%dT%H:%M")
     rows_per_area = {"DK1": {}, "DK2": {}}
 
     for area in ["DK1", "DK2"]:
