@@ -96,15 +96,19 @@ def collect_dk_hourly_data():
         recent_start = (current_date - timedelta(days=7)).strftime("%Y-%m-%d")
         
         for rec in fetch_all_records("Elspotprices", area, start=recent_start):
-            dt_str = rec["HourDK"].replace('Z', '') 
+            dt_dk = datetime.fromisoformat(rec["HourDK"].replace('Z', ''))
+            dt_dk = dt_dk + timedelta(hours=2)  # ← tilføj denne
+            dt_str = dt_dk.strftime("%Y-%m-%dT%H:%M:%S")
             price_dict[dt_str] = {
                 "area": area,
                 "datetime": dt_str,
                 "price_dkk": rec["SpotPriceDKK"]
             }
-            
+        
         for rec in fetch_all_records("DayAheadPrices", area, start=recent_start):
-            dt_str = rec["TimeDK"].replace('Z', '')
+            dt_dk = datetime.fromisoformat(rec["TimeDK"].replace('Z', ''))
+            dt_dk = dt_dk + timedelta(hours=2)  # ← tilføj denne
+            dt_str = dt_dk.strftime("%Y-%m-%dT%H:%M:%S")
             if dt_str not in price_dict:
                 price_dict[dt_str] = {
                     "area": area,
