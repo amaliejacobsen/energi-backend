@@ -329,7 +329,10 @@ def collect_hydro_forecast_realtime():
 
 def collect_generation_mix():
     print("Henter generation mix (GenerationProdTypeExchange) - akkumuleret fra kl. 00...")
-    date_str = datetime.utcnow().strftime("%Y-%m-%d")
+    from datetime import timezone
+    import zoneinfo
+    cph_tz  = zoneinfo.ZoneInfo("Europe/Copenhagen")
+    date_str = datetime.now(tz=cph_tz).strftime("%Y-%m-%d")
 
     for area in ["DK1", "DK2"]:
         if area == "DK2":
