@@ -1,8 +1,6 @@
 import requests
-import xml.etree.ElementTree as ET
 import time
 from datetime import datetime, timedelta
-from collections import defaultdict
 from supabase import create_client
 import os
 
@@ -10,317 +8,328 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 supabase     = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-ENTSOE_TOKEN = os.environ.get("ENTSOE_TOKEN", "138899c3-59b3-48ef-9dfd-03406794210d")
-ENTSOE_URL   = "https://web-api.tp.entsoe.eu/api"
-
-current_date = datetime.today()
-
-end = (datetime.today() + timedelta(days=1)).strftime("%Y-%m-%d")
-
-PSR_NAMES = {
-    "B01": "Biomass", "B02": "Fossil Brown coal/Lignite", "B03": "Fossil Coal-derived gas",
-    "B04": "Fossil Gas", "B05": "Fossil Hard coal", "B06": "Fossil Oil",
-    "B09": "Hydro Pumped Storage", "B10": "Hydro Run-of-river",
-    "B11": "Hydro Water Reservoir", "B12": "Wind Offshore", "B13": "Wind Onshore",
-    "B14": "Solar", "B16": "Nuclear", "B17": "Other renewable",
-    "B18": "Waste", "B19": "Other", "B20": "Marine",
-}
-
-DK_NEIGHBORS = {
-    "DK1": {
-        "eic": "10YDK-1--------W",
-        "neighbors": {
-            "NO2": "10YNO-2--------T",
-            "DE":  "10Y1001A1001A83F",  # ← ret denne
-            "NL":  "10YNL----------L",  # ← tilføj Holland
-            "DK2": "10YDK-2--------M",
-            "SE3": "10Y1001A1001A46L",  # ← tilføj Sverige SE3
-        }
-    },
-    "DK2": {
-        "eic": "10YDK-2--------M",
-        "neighbors": {
-            "SE4": "10Y1001A1001A47J",
-            "DE":  "10Y1001A1001A83F",  # ← ret denne
-            "DK1": "10YDK-1--------W",
-        }
-    }
-}
-
-def fetch_all_records(dataset, area, start="2020-01-01"):
-    all_records = []
-    limit = 10000
-    offset = 0
-    sort_column = "TimeDK" if dataset == "DayAheadPrices" else "HourDK"
-    while True:
-        try:
-            r = requests.get(f"https://api.energidataservice.dk/dataset/{dataset}", params={
-                "start": start,
-                "end": end,
-                "filter": f'{{"PriceArea":"{area}"}}',
-                "limit": limit,
-                "offset": offset,
-                "sort": f"{sort_column} asc",
-            }, timeout=30)
-            
-            if r.status_code == 429:
-                print(f"  Rate limit ramt for {dataset} ({area}) ved offset {offset}, venter 30s...")
-                time.sleep(30)
-                continue
-                
-            r.raise_for_status()
-            if not r.text.strip():
+def upsert_with_retry(table, rows, on_conflict, batch_size=200):
+    """Upsert i små batches med retry ved fejl."""
+    for i in range(0, len(rows), batch_size):
+        batch = rows[i:i+batch_size]
+        for attempt in range(3):
+            try:
+                supabase.table(table).upsert(batch, on_conflict=on_conflict).execute()
                 break
-            data = r.json()
-            records = data.get("records", [])
-            if not records:
-                break
-            all_records.extend(records)
-            if len(records) < limit:
-                break
-            offset += limit
-            time.sleep(2)  # Øget fra 0.3 til 2 sekunder
-        except Exception as e:
-            print(f"Fejl ved hentning af {dataset} ({area}): {e}")
-            break
-    return all_records
-
-
+            except Exception as e:
+                print(f"  Upsert fejl forsøg {attempt+1}: {e}")
+                if attempt < 2:
+                    time.sleep(5 * (attempt + 1))
+                else:
+                    print(f"  Springer batch over efter 3 forsøg")
 
 def collect_realtid_dk_hourly():
-    print("Henter realtid data (GenerationProdTypeExchange)...")
-
+    print("Henter realtid data (ElectricityBalanceNonv)...")
+    
     from_dt = (datetime.utcnow() - timedelta(hours=48)).strftime("%Y-%m-%dT%H:%M")
-    rows_per_area = {"DK1": {}, "DK2": {}}
-
+    
     for area in ["DK1", "DK2"]:
         offset = 0
+        rows = []
         while True:
-            r = None
             for attempt in range(5):
                 try:
                     r = requests.get(
-                        "https://api.energidataservice.dk/dataset/GenerationProdTypeExchange",
+                        "https://api.energidataservice.dk/dataset/ElectricityBalanceNonv",
                         params={
                             "filter": f'{{"PriceArea":"{area}"}}',
                             "start": from_dt,
                             "limit": 1000,
                             "offset": offset,
-                            "sort": "TimeDK asc",
+                            "sort": "HourUTC asc",
+                        },
+                        headers={
+                            "User-Agent": "Mozilla/5.0 energi-dashboard/1.0"
                         },
                         timeout=30
                     )
                     if r.status_code == 429:
-                        print(f"  Rate limit, venter 30s...")
-                        time.sleep(30)
-                        continue
-                    r.raise_for_status()
-                    break
-                except Exception as e:
-                    print(f"  Fejl: {e}, venter 15s...")
-                    time.sleep(15)
-
-            if r is None:
-                break
-
-            records = r.json().get("records", [])
-            if not records:
-                break
-
-            records = r.json().get("records", [])
-            if not records:
-                break
-            
-            if offset == 0:
-                rec = records[0]
-                print(f"  DEBUG LAST5 area={area} TimeDK={rec.get('TimeDK')}: GrossCon={rec.get('GrossCon')}, GrossConsumption={rec.get('GrossConsumption')}, TotalLoad={rec.get('TotalLoad')}")
-            
-            for rec in records:
-                dt_str = rec.get("TimeDK", "").replace("Z", "")
-                if not dt_str:
-                    continue
-                if "T06:00" in dt_str and area == "DK1":
-                     print(f"  DEBUG kl 06:00 TimeDK={rec.get('TimeDK')} Version={rec.get('Version')}: Solar={rec.get('SolarPower')}, Offshore={rec.get('OffshoreWindPower')}, Onshore={rec.get('OnshoreWindPower')}")
-                dt_iso = dt_str
-                rows_per_area[area][dt_iso] = {
-                    "solar":       rec.get("SolarPower", 0) or 0,
-                    "offshore":    rec.get("OffshoreWindPower", 0) or 0,
-                    "onshore":     rec.get("OnshoreWindPower", 0) or 0,
-                    "consumption": rec.get("GrossCon", 0) or 0,
-                }
-            
-            if len(records) < 1000:
-                break
-            offset += 1000
-            time.sleep(2)
-
-    for area, timepoints in rows_per_area.items():
-        rows = []
-        for dt_str, vals in timepoints.items():
-            for source in ["solar", "offshore", "onshore", "consumption"]:
-                rows.append({
-                    "area":      area,
-                    "source":    source,
-                    "datetime":  dt_str,
-                    "value_mwh": round(vals[source], 3),
-                })
-
-        if rows:
-            for i in range(0, len(rows), 1000):
-                supabase.table("dk_production_hourly").upsert(
-                    rows[i:i+1000],
-                    on_conflict="area,source,datetime"
-                ).execute()
-            print(f"  {area} realtid gemt ({len(rows)} rækker)")
-
-def collect_dk_prices_realtime():
-    print("Henter spotpriser...")
-    
-    recent_start = (datetime.utcnow() - timedelta(days=2)).strftime("%Y-%m-%d")
-    
-    for area in ["DK1", "DK2"]:
-        price_dict = {}
-        
-        for rec in fetch_all_records("Elspotprices", area, start=recent_start):
-            dt_dk = datetime.fromisoformat(rec["HourDK"].replace('Z', ''))
-            dt_utc = dt_dk - timedelta(hours=2)
-            dt_str = dt_utc.strftime("%Y-%m-%dT%H:%M:%S")
-            price_dict[dt_str] = {
-                "area": area,
-                "datetime": dt_str,
-                "price_dkk": rec["SpotPriceDKK"]
-            }
-        
-        for rec in fetch_all_records("DayAheadPrices", area, start=recent_start):
-            dt_dk = datetime.fromisoformat(rec["TimeDK"].replace('Z', ''))
-            dt_utc = dt_dk - timedelta(hours=2)
-            dt_str = dt_utc.strftime("%Y-%m-%dT%H:%M:%S")
-            if dt_str not in price_dict:
-                price_dict[dt_str] = {
-                    "area": area,
-                    "datetime": dt_str,
-                    "price_dkk": rec["DayAheadPriceDKK"]
-                }
-        
-        price_rows = list(price_dict.values())
-        if price_rows:
-            for i in range(0, len(price_rows), 1000):
-                supabase.table("dk_prices_hourly").upsert(
-                    price_rows[i:i+1000],
-                    on_conflict="area,datetime"
-                ).execute()
-            print(f"  {area} priser gemt ({len(price_rows)} rækker)")
-
-def collect_generation_mix():
-    print("Henter generation mix (GenerationProdTypeExchange) - akkumuleret fra kl. 00...")
-    date_str = datetime.utcnow().strftime("%Y-%m-%d")
-
-    for area in ["DK1", "DK2"]:
-        if area == "DK2":
-            print("  Pause før DK2...")
-            time.sleep(30)
-
-        all_records = []
-        offset = 0
-        while True:
-            r = None
-            for attempt in range(5):
-                try:
-                    r = requests.get(
-                        "https://api.energidataservice.dk/dataset/GenerationProdTypeExchange",
-                        params={
-                            "filter": f'{{"PriceArea":"{area}"}}',
-                            "start": f"{date_str}T00:00",
-                            "limit": 1000,
-                            "offset": offset,
-                            "sort": "TimeDK asc",
-                        },
-                        timeout=30
-                    )
-                    if r.status_code == 429:
-                        wait = 30 * (attempt + 1)
-                        print(f"  Rate limit for {area}, venter {wait}s...")
+                        wait = 120 * (attempt + 1)
+                        print(f"  Rate limit, venter {wait}s...")
                         time.sleep(wait)
                         continue
                     r.raise_for_status()
                     break
                 except Exception as e:
-                    print(f"  Fejl for {area}: {e}, venter 15s...")
-                    time.sleep(15)
-            else:
-                print(f"  Alle forsøg fejlede for {area}, springer over.")
-                break
-
-            if r is None:
-                break
-
+                    print(f"  Fejl: {e}, venter 30s...")
+                    time.sleep(30)
+            
             records = r.json().get("records", [])
             if not records:
                 break
-            all_records.extend(records)
+            
+            if offset == 0:
+                print(f"  FELTER {area}:", list(records[0].keys()))
+            
+            for rec in records:
+                dt_str = rec["HourDK"].replace("Z", "")
+                for source, field in [
+                    ("solar",       "SolarPower"),
+                    ("offshore",    "OffshoreWindPower"),
+                    ("onshore",     "OnshoreWindPower"),
+                    ("consumption", "GrossConsumption"),
+                ]:
+                    rows.append({
+                        "area":       area,
+                        "source":     source,
+                        "datetime":   dt_str,
+                        "value_mwh":  round(rec.get(field, 0) or 0, 3),
+                    })
+            
             if len(records) < 1000:
                 break
             offset += 1000
-            time.sleep(1)
+            time.sleep(2)
+        
+        if rows:
+            upsert_with_retry("dk_production_hourly", rows, "area,source,datetime")
+            print(f"  {area} realtid gemt ({len(rows) // 4} tidspunkter)")
 
-        if not all_records:
-            print(f"  Ingen data for {area}")
-            continue
+def collect_realtime_prices():
+    print("Henter realtid priser...")
+    from_dt = (datetime.utcnow() - timedelta(hours=48)).strftime("%Y-%m-%dT%H:%M")
 
-        print(f"  {area}: {len(all_records)} målinger fra {all_records[0].get('TimeDK')} til {all_records[-1].get('TimeDK')}")
+    for area in ["DK1", "DK2"]:
+        # Elspotprices (historisk)
+        elspot_rows = []
+        for attempt in range(5):
+            try:
+                r = requests.get(
+                    "https://api.energidataservice.dk/dataset/Elspotprices",
+                    params={
+                        "filter": f'{{"PriceArea":"{area}"}}',
+                        "start": from_dt,
+                        "limit": 1000,
+                        "sort": "HourDK asc",
+                    },
+                    headers={"User-Agent": "Mozilla/5.0 energi-dashboard/1.0"},
+                    timeout=30
+                )
+                if r.status_code == 429:
+                    time.sleep(120 * (attempt + 1))
+                    continue
+                r.raise_for_status()
+                break
+            except Exception as e:
+                print(f"  Fejl Elspot: {e}")
+                time.sleep(30)
 
-        source_fields = {
-            "Offshore Wind":  "OffshoreWindPower",
-            "Onshore Wind":   "OnshoreWindPower",
-            "Solar":          "SolarPower",
-            "Hydro":          "HydroPower",
-            "Biomass":        "Biomass",
-            "Biogas":         "Biogas",
-            "Waste":          "Waste",
-            "Fossil Gas":     "FossilGas",
-            "Fossil Oil":     "FossilOil",
-            "Fossil Hard coal": "FossilHardCoal",
-        }
-        exchange_fields = {
-            "Fra Tyskland":      "ExchangeGermany",
-            "Fra Sverige":       "ExchangeSweden",
-            "Fra Norge":         "ExchangeNorway",
-            "Fra Holland":       "ExchangeNetherlands",
-            "Fra Storbritannien": "ExchangeGreatBritain",
-            "Fra DK1/DK2":       "ExchangeGreatBelt",
-        }
-
-        def avg_field(field):
-            vals = [rec.get(field, 0) or 0 for rec in all_records]
-            return sum(vals) / len(vals) if vals else 0
-
-        rows = []
-        for source, field in source_fields.items():
-            rows.append({
-                "area": area, "date": date_str, "source": source,
-                "avg_mw": round(avg_field(field), 2), "is_import": False,
-            })
-        for source, field in exchange_fields.items():
-            avg_mw = avg_field(field)
-            if avg_mw == 0:
-                continue
-            rows.append({
-                "area": area, "date": date_str, "source": source,
-                "avg_mw": round(avg_mw, 2), "is_import": avg_mw > 0,
+        for rec in r.json().get("records", []):
+            dt_str = rec["HourDK"].replace("Z", "")
+            elspot_rows.append({
+                "area":      area,
+                "datetime":  dt_str,
+                "price_dkk": rec.get("SpotPriceDKK", 0) or 0,
             })
 
-        print(f"\n--- {area} KLAR TIL AT GEMME ---")
-        for row in rows:
-            print(f"{row['source']:<22} | {row['avg_mw']} MW | import={row['is_import']}")
-        print("-------------------------\n")
+        if elspot_rows:
+            upsert_with_retry("dk_prices_hourly", elspot_rows, "area,datetime")
+            print(f"  {area} Elspot gemt ({len(elspot_rows)} timer)")
 
-        supabase.table("generation_mix").upsert(rows, on_conflict="area,date,source").execute()
-        print(f"{area} generation mix gemt ({len(rows)} rækker).")
+        # DayAheadPrices (nyeste - 15 min opløsning, aggreger til timer)
+        dayahead_records = []
+        for attempt in range(5):
+            try:
+                r = requests.get(
+                    "https://api.energidataservice.dk/dataset/DayAheadPrices",
+                    params={
+                        "filter": f'{{"PriceArea":"{area}"}}',
+                        "start": from_dt,
+                        "limit": 1000,
+                        "sort": "TimeDK asc",
+                    },
+                    headers={"User-Agent": "Mozilla/5.0 energi-dashboard/1.0"},
+                    timeout=30
+                )
+                if r.status_code == 429:
+                    time.sleep(120 * (attempt + 1))
+                    continue
+                r.raise_for_status()
+                break
+            except Exception as e:
+                print(f"  Fejl DayAhead: {e}")
+                time.sleep(30)
 
+        dayahead_records = r.json().get("records", [])
+
+        # Aggreger 15-min til timesgennemsnit
+        hourly = {}
+        for rec in dayahead_records:
+            dt = datetime.fromisoformat(rec["TimeDK"].replace("Z", ""))
+            dt_hour = dt.replace(minute=0, second=0, microsecond=0)
+            key = dt_hour.strftime("%Y-%m-%dT%H:%M:%S")
+            if key not in hourly:
+                hourly[key] = []
+            hourly[key].append(rec["DayAheadPriceDKK"])
+
+        dayahead_rows = []
+        for dt_str, prices in hourly.items():
+            dayahead_rows.append({
+                "area":      area,
+                "datetime":  dt_str,
+                "price_dkk": round(sum(prices) / len(prices), 6),
+            })
+
+        if dayahead_rows:
+            upsert_with_retry("dk_prices_hourly", dayahead_rows, "area,datetime")
+            print(f"  {area} DayAhead gemt ({len(dayahead_rows)} timer)")
+
+        time.sleep(2)
+
+def collect_temperature_realtime():
+    print("Henter temperatur realtid (Open-Meteo)...")
+    import json
+
+    locations = {
+        "Danmark": {"lat": 56.0, "lon": 10.0},
+        "Norge":   {"lat": 60.5, "lon": 8.5},
+        "Sverige": {"lat": 59.5, "lon": 15.0},
+        "Tyskland":{"lat": 51.0, "lon": 10.0},
+    }
+
+    today = datetime.utcnow().date()
+    date_from = (today - timedelta(days=3)).isoformat()
+    date_to   = (today + timedelta(days=14)).isoformat()
+
+    rows = []
+    for country, coords in locations.items():
+        for attempt in range(3):
+            try:
+                r = requests.get(
+                    "https://api.open-meteo.com/v1/forecast",
+                    params={
+                        "latitude":  coords["lat"],
+                        "longitude": coords["lon"],
+                        "daily":     "temperature_2m_mean",
+                        "start_date": date_from,
+                        "end_date":   date_to,
+                        "timezone":  "Europe/Copenhagen",
+                    },
+                    timeout=20
+                )
+                r.raise_for_status()
+                data = r.json()
+                dates  = data["daily"]["time"]
+                temps  = data["daily"]["temperature_2m_mean"]
+                today_str = today.isoformat()
+                for date_str, temp in zip(dates, temps):
+                    if temp is None:
+                        continue
+                    if date_str < today_str:
+                        data_type = "historisk"
+                    elif date_str == today_str:
+                        data_type = "i dag"
+                    else:
+                        data_type = "forecast"
+                    rows.append({
+                        "country":       country,
+                        "date":          date_str,
+                        "temperature_c": round(temp, 2),
+                        "data_type":     data_type,
+                    })
+                break
+            except Exception as e:
+                print(f"  Fejl temperatur {country}: {e}")
+                time.sleep(10)
+        time.sleep(1)
+
+    if rows:
+        upsert_with_retry("temperature_forecast", rows, "country,date", batch_size=200)
+        print(f"  Temperaturdata gemt ({len(rows)} rækker)")
+
+def collect_hydro_forecast_realtime():
+    print("Henter nedbør realtid (Open-Meteo)...")
+
+    locations = {
+        "Norge":   {"lat": 61.5, "lon": 8.5},
+        "Sverige": {"lat": 63.0, "lon": 14.0},
+    }
+
+    today = datetime.utcnow().date()
+    date_from = (today - timedelta(days=14)).isoformat()
+    date_to   = (today + timedelta(days=14)).isoformat()
+
+    rows = []
+    for country, coords in locations.items():
+        # Historisk
+        for attempt in range(3):
+            try:
+                r = requests.get(
+                    "https://archive-api.open-meteo.com/v1/archive",
+                    params={
+                        "latitude":   coords["lat"],
+                        "longitude":  coords["lon"],
+                        "daily":      "precipitation_sum",
+                        "start_date": date_from,
+                        "end_date":   (today - timedelta(days=1)).isoformat(),
+                        "timezone":   "Europe/Copenhagen",
+                    },
+                    timeout=20
+                )
+                r.raise_for_status()
+                data = r.json()
+                for date_str, precip in zip(data["daily"]["time"], data["daily"]["precipitation_sum"]):
+                    if precip is None:
+                        continue
+                    rows.append({
+                        "country":          country,
+                        "date":             date_str,
+                        "precipitation_mm": round(precip, 2),
+                        "data_type":        "historisk",
+                    })
+                break
+            except Exception as e:
+                print(f"  Fejl historisk nedbør {country}: {e}")
+                time.sleep(10)
+
+        # Forecast
+        for attempt in range(3):
+            try:
+                r = requests.get(
+                    "https://api.open-meteo.com/v1/forecast",
+                    params={
+                        "latitude":   coords["lat"],
+                        "longitude":  coords["lon"],
+                        "daily":      "precipitation_sum",
+                        "start_date": today.isoformat(),
+                        "end_date":   date_to,
+                        "timezone":   "Europe/Copenhagen",
+                    },
+                    timeout=20
+                )
+                r.raise_for_status()
+                data = r.json()
+                today_str = today.isoformat()
+                for date_str, precip in zip(data["daily"]["time"], data["daily"]["precipitation_sum"]):
+                    if precip is None:
+                        continue
+                    data_type = "i dag" if date_str == today_str else "forecast"
+                    rows.append({
+                        "country":          country,
+                        "date":             date_str,
+                        "precipitation_mm": round(precip, 2),
+                        "data_type":        data_type,
+                    })
+                break
+            except Exception as e:
+                print(f"  Fejl forecast nedbør {country}: {e}")
+                time.sleep(10)
+
+        time.sleep(1)
+
+    if rows:
+        upsert_with_retry("hydro_weather_forecast", rows, "country,date", batch_size=200)
+        print(f"  Nedbørsdata gemt ({len(rows)} rækker)")
 
 if __name__ == "__main__":
     print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
     collect_realtid_dk_hourly()
-    collect_generation_mix()
-    collect_dk_prices_realtime()
+    collect_realtime_prices()
+    collect_temperature_realtime()
+    collect_hydro_forecast_realtime()
     print(f"\nFærdig: {datetime.now()}\n{'='*40}")
