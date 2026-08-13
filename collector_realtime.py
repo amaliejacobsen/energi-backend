@@ -326,10 +326,119 @@ def collect_hydro_forecast_realtime():
         upsert_with_retry("hydro_weather_forecast", rows, "country,date", batch_size=200)
         print(f"  Nedbørsdata gemt ({len(rows)} rækker)")
 
+
+def collect_generation_mix():
+    print("Henter generation mix (GenerationProdTypeExchange) - akkumuleret fra kl. 00...")
+    date_str = datetime.utcnow().strftime("%Y-%m-%d")
+
+    for area in ["DK1", "DK2"]:
+        if area == "DK2":
+            print("  Pause før DK2...")
+            time.sleep(30)
+
+        all_records = []
+        offset = 0
+        while True:
+            r = None
+            for attempt in range(5):
+                try:
+                    r = requests.get(
+                        "https://api.energidataservice.dk/dataset/GenerationProdTypeExchange",
+                        params={
+                            "filter": f'{{"PriceArea":"{area}"}}',
+                            "start": f"{date_str}T00:00",
+                            "limit": 1000,
+                            "offset": offset,
+                            "sort": "TimeDK asc",
+                        },
+                        timeout=30
+                    )
+                    if r.status_code == 429:
+                        wait = 30 * (attempt + 1)
+                        print(f"  Rate limit for {area}, venter {wait}s...")
+                        time.sleep(wait)
+                        continue
+                    r.raise_for_status()
+                    break
+                except Exception as e:
+                    print(f"  Fejl for {area}: {e}, venter 15s...")
+                    time.sleep(15)
+            else:
+                print(f"  Alle forsøg fejlede for {area}, springer over.")
+                break
+
+            if r is None:
+                break
+
+            records = r.json().get("records", [])
+            if not records:
+                break
+            all_records.extend(records)
+            if len(records) < 1000:
+                break
+            offset += 1000
+            time.sleep(1)
+
+        if not all_records:
+            print(f"  Ingen data for {area}")
+            continue
+
+        print(f"  {area}: {len(all_records)} målinger fra {all_records[0].get('TimeDK')} til {all_records[-1].get('TimeDK')}")
+
+        source_fields = {
+            "Offshore Wind":  "OffshoreWindPower",
+            "Onshore Wind":   "OnshoreWindPower",
+            "Solar":          "SolarPower",
+            "Hydro":          "HydroPower",
+            "Biomass":        "Biomass",
+            "Biogas":         "Biogas",
+            "Waste":          "Waste",
+            "Fossil Gas":     "FossilGas",
+            "Fossil Oil":     "FossilOil",
+            "Fossil Hard coal": "FossilHardCoal",
+        }
+        exchange_fields = {
+            "Fra Tyskland":      "ExchangeGermany",
+            "Fra Sverige":       "ExchangeSweden",
+            "Fra Norge":         "ExchangeNorway",
+            "Fra Holland":       "ExchangeNetherlands",
+            "Fra Storbritannien": "ExchangeGreatBritain",
+            "Fra DK1/DK2":       "ExchangeGreatBelt",
+        }
+
+        def avg_field(field):
+            vals = [rec.get(field, 0) or 0 for rec in all_records]
+            return sum(vals) / len(vals) if vals else 0
+
+        rows = []
+        for source, field in source_fields.items():
+            rows.append({
+                "area": area, "date": date_str, "source": source,
+                "avg_mw": round(avg_field(field), 2), "is_import": False,
+            })
+        for source, field in exchange_fields.items():
+            avg_mw = avg_field(field)
+            if avg_mw == 0:
+                continue
+            rows.append({
+                "area": area, "date": date_str, "source": source,
+                "avg_mw": round(avg_mw, 2), "is_import": avg_mw > 0,
+            })
+
+        print(f"\n--- {area} KLAR TIL AT GEMME ---")
+        for row in rows:
+            print(f"{row['source']:<22} | {row['avg_mw']} MW | import={row['is_import']}")
+        print("-------------------------\n")
+
+        supabase.table("generation_mix").upsert(rows, on_conflict="area,date,source").execute()
+        print(f"{area} generation mix gemt ({len(rows)} rækker).")
+
+
 if __name__ == "__main__":
     print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
     collect_realtid_dk_hourly()
     collect_realtime_prices()
     collect_temperature_realtime()
     collect_hydro_forecast_realtime()
+    collect_generation_mix()
     print(f"\nFærdig: {datetime.now()}\n{'='*40}")
