@@ -1,3 +1,25 @@
+# Imports og API-konfiguration (miljøvariabler, f.eks. GitHub Actions secrets)
+import os
+import time
+import requests
+import xml.etree.ElementTree as ET
+from datetime import datetime, timedelta
+from collections import defaultdict
+from supabase import create_client
+
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+ENTSOE_TOKEN = os.getenv("ENTSOE_TOKEN") or os.getenv("ENTSOE_API_KEY")
+AGSI_KEY = os.getenv("AGSI_KEY") or os.getenv("AGSI_API_KEY")
+ENTSOE_URL = os.getenv("ENTSOE_URL", "https://web-api.tp.entsoe.eu/api")
+AGSI_URL = os.getenv("AGSI_URL", "https://agsi.gie.eu/api")
+NUCLEAR_URL = os.getenv("NUCLEAR_URL")
+
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise RuntimeError("SUPABASE_URL og SUPABASE_KEY (eller SUPABASE_SERVICE_ROLE_KEY) skal være sat i miljøet")
+
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
 # Datoer beregnes ved hver kørsel. API-slutdato er eksklusiv.
 current_date = datetime.today()
 end_date = (current_date + timedelta(days=1)).date()
@@ -407,6 +429,9 @@ def fetch_nuclear_monthly(eic_code, year, token):
 
 def fetch_sweden_nuclear_daily():
     """Henter svensk atomkraftproduktion fra SYSpower (daglig, MWh) og aggregerer månedligt."""
+    if not NUCLEAR_URL:
+        print("Svensk atomkraft springes over: NUCLEAR_URL er ikke sat")
+        return []
     url = NUCLEAR_URL.replace("fileformat=iqy", "fileformat=html")
     r = requests.get(url, timeout=30)
     r.raise_for_status()
@@ -1042,6 +1067,9 @@ def collect_dk_hourly_data():
 
 
 def collect_all():
+    missing = [name for name, value in (("ENTSOE_TOKEN/ENTSOE_API_KEY", ENTSOE_TOKEN), ("AGSI_KEY/AGSI_API_KEY", AGSI_KEY)) if not value]
+    if missing:
+        raise RuntimeError("Manglende API-nøgler: " + ", ".join(missing))
     print(f"\n{'='*40}\nStart: {datetime.now()}\n{'='*40}")
     collect_dk_hourly_data()
     collect_consumption_data()
