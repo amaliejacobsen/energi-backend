@@ -1,56 +1,29 @@
-import requests
-import xml.etree.ElementTree as ET
-import statistics
-import time
-from datetime import datetime, timedelta
-from collections import defaultdict
-from supabase import create_client
-import os
+# Datoer beregnes ved hver kørsel. API-slutdato er eksklusiv.
+current_date = datetime.today()
+end_date = (current_date + timedelta(days=1)).date()
+end = end_date.isoformat()
+current_year = current_date.year
+current_month = current_date.month
+current_day = current_date.day
+fetch_years = list(range(2020, current_year + 1))
+areas = ["DK1", "DK2"]
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
-supabase     = create_client(SUPABASE_URL, SUPABASE_KEY)
+print(f"Dato: {current_date:%Y-%m-%d} | Henter til senest tilgængelige data (API-slutgrænse {end})")
 
-ENTSOE_TOKEN    = os.environ.get("ENTSOE_TOKEN", "ef302298-7032-4d0c-a986-5ae34533c235")
-ENTSOE_URL      = "https://web-api.tp.entsoe.eu/api"
-AGSI_KEY        = os.environ.get("AGSI_KEY", "12a5ed2eb1b9d3f2091abd2213758ec2")
-AGSI_URL        = "https://agsi.gie.eu/api"
 
-NUCLEAR_URL     = "https://syspower5.skm.no/api/webquery/execute?fileformat=iqy&series=PROFRNUC_ENTSOE,PROSENUC_PS,PROFINUC&start=d-1&end=d&interval=day&token=LIPhyBZjn63NJ7n3&emptydata=no&currency=&dateFormat=nbno&numberFormat=nothousandsdot&headers=yes"
-
-current_date    = datetime.today()
-end             = (current_date + timedelta(days=1)).strftime("%Y-%m-%d")
-current_year    = current_date.year
-current_month   = current_date.month
-current_day     = current_date.day
-
-# Til dk_prices: inkluder frem til i dag inkl. indeværende måned
-current_month_cutoff = current_month
-
-# Til andre datasæt (produktion, gas, hydro): kun hele afsluttede måneder
-if current_day >= 14:
-    if current_month > 1:
-        last_full_month = current_month - 1
+def api_period_end(year, month=None):
+    """Eksklusiv slutgrænse for et år/en måned, højst i morgen kl. 00:00."""
+    if month is None:
+        candidate = datetime(year + 1, 1, 1).date()
+    elif month == 12:
+        candidate = datetime(year + 1, 1, 1).date()
     else:
-        last_full_month = 12
-else:
-    if current_month > 2:
-        last_full_month = current_month - 2
-    elif current_month == 2:
-        last_full_month = 12
-    else:
-        last_full_month = 11
+        candidate = datetime(year, month + 1, 1).date()
+    return min(candidate, end_date).strftime("%Y%m%d0000")
 
-if last_full_month == 12 and current_month < 3:
-    last_full_year = current_year - 1
-else:
-    last_full_year = current_year
-    
 
-print(f"Dato: {current_date.strftime('%Y-%m-%d')} | Henter data til og med: {last_full_year}-{last_full_month:02d}")
-
-fetch_years     = list(range(2020, current_year + 1))
-areas           = ["DK1", "DK2"]
+def month_has_started(year, month):
+    return (year, month) <= (current_year, current_month)
 
 def weighted_avg(price_dict, prod_dict):
     sumproduct = 0
@@ -86,12 +59,8 @@ def monthly_weighted(price_dict, prod_dict):
 
 
 def is_too_recent(year, month):
-    # Tillad data frem til og med den nuværende måned
-    if year > current_year:
-        return True
-    if year == current_year and month > current_month:
-        return True
-    return False
+    # Den igangværende måned medtages, også når den endnu er uafsluttet.
+    return not month_has_started(year, month)
 
 
 def collect_realtid_monthly():
@@ -144,7 +113,8 @@ def fetch_all_records(dataset, area, start="2020-01-01"):
         try:
             r = requests.get(f"https://api.energidataservice.dk/dataset/{dataset}", params={
                 "start": start,
-                "end": end,
+                "end": ((current_date + timedelta(days=2)).strftime("%Y-%m-%d")
+                        if dataset == "DayAheadPrices" else end),
                 "filter": f'{{"PriceArea":"{area}"}}',
                 "limit": limit,
                 "offset": offset,
@@ -262,7 +232,7 @@ def collect_dk_data():
 
         for rec in fetch_all_records("ProductionConsumptionSettlement", area):
             dt = datetime.fromisoformat(rec["HourDK"].replace('Z', '+00:00'))
-            # Produktion: kun hele afsluttede måneder
+            # Produktion: medtag også data fra indeværende måned
             if is_too_recent(dt.year, dt.month):
                 continue
                 
@@ -337,12 +307,13 @@ HYDRO_PSR_TYPES = {"B11", "B12", "B10"}
 def fetch_hydro_monthly_a75(eic_code, year, token):
     monthly = defaultdict(float)
     for month in range(1, 13):
-        next_year, next_month = (year + 1, 1) if month == 12 else (year, month + 1)
+        if not month_has_started(year, month):
+            break
         params = {
             "documentType": "A75", "processType": "A16",
             "in_Domain": eic_code,
             "periodStart": f"{year}{month:02d}010000",
-            "periodEnd":   f"{next_year}{next_month:02d}010000",
+            "periodEnd":   api_period_end(year, month),
             "securityToken": token,
         }
         for attempt in range(3):
@@ -389,12 +360,13 @@ NUCLEAR_COUNTRIES = {
 def fetch_nuclear_monthly(eic_code, year, token):
     monthly = defaultdict(float)
     for month in range(1, 13):
-        next_year, next_month = (year + 1, 1) if month == 12 else (year, month + 1)
+        if not month_has_started(year, month):
+            break
         params = {
             "documentType": "A75", "processType": "A16",
             "in_Domain": eic_code,
             "periodStart": f"{year}{month:02d}010000",
-            "periodEnd":   f"{next_year}{next_month:02d}010000",
+            "periodEnd":   api_period_end(year, month),
             "securityToken": token,
         }
         for attempt in range(3):
@@ -482,6 +454,8 @@ def fetch_sweden_nuclear_daily():
         except (ValueError, IndexError):
             continue
         
+        if date.date() > current_date.date():
+            continue
         key = (date.year, date.month)
         monthly[key] += sweden_mwh
     
@@ -563,7 +537,7 @@ def fetch_gas_storage_monthly(area_config, year, api_key):
     while True:
         params = {
             area_config["param"]: area_config["code"],
-            "from": f"{year}-01-01", "to": f"{year}-12-31",
+            "from": f"{year}-01-01", "to": min(end_date, datetime(year, 12, 31).date()).isoformat(),
             "page": page, "size": 300,
         }
         r = requests.get(AGSI_URL, headers=headers, params=params)
@@ -743,7 +717,7 @@ def fetch_capacity_for_eic(eic, year, allowed_psr, psr_map):
         "documentType": "A68", "processType": "A33",
         "in_Domain": eic,
         "periodStart": f"{year}01010000",
-        "periodEnd":   f"{year}12312300",
+        "periodEnd":   api_period_end(year),
         "securityToken": ENTSOE_TOKEN,
     }
     for attempt in range(3):
@@ -846,7 +820,7 @@ def fetch_consumption_monthly(eic_code, year, token):
         "processType": "A16",
         "outBiddingZone_Domain": eic_code,
         "periodStart": f"{year}01010000", 
-        "periodEnd": f"{year}12312300",
+        "periodEnd": api_period_end(year),
         "securityToken": token,
     }
     
@@ -918,6 +892,7 @@ def fetch_consumption_monthly(eic_code, year, token):
                     continue
 
     # Fordel de unikke datapunkter til måneds- og time-lister
+    unique_data = {dt: qty for dt, qty in unique_data.items() if dt.date() <= current_date.date()}
     for dt, qty in unique_data.items():
         monthly[dt.month].append(qty)
         hourly[dt.hour].append(qty)
@@ -1000,7 +975,7 @@ def collect_dk_hourly_data():
     for area in ["DK1", "DK2"]: 
         price_dict = {}
         
-        # Kun hent de seneste 7 dage + i morgen (day-ahead)
+        # Opdatér seneste 14 dage + evt. tilgængelige day-ahead-priser
         recent_start = (current_date - timedelta(days=14)).strftime("%Y-%m-%d")
         
         for rec in fetch_all_records("Elspotprices", area, start=recent_start):
@@ -1032,9 +1007,6 @@ def collect_dk_hourly_data():
                     on_conflict="area,datetime"
                 ).execute()
             print(f"  {area} priser gemt ({len(price_rows)} rækker)")
-
-        # Produktion — behold start=2020 kun første gang, herefter kun recent
-        # ... resten af funktionen uændret
 
         # Produktion — historisk fra ProductionConsumptionSettlement
         solar_dict = {}
